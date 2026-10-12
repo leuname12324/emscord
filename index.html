@@ -440,6 +440,40 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .toast .t-title{font-weight:800;color:#fff;margin-bottom:2px;letter-spacing:.5px}
 .toast .t-body{color:var(--txt-mut);font-size:12px}
 @media (max-width:768px){
+  /* ⚡ Tile de screen share (separado do participante) */
+.call-tile.screen-tile{border-color:var(--green);box-shadow:0 0 20px rgba(35,165,90,.4)}
+.call-tile.screen-tile video{object-fit:contain;background:#000}
+.call-tile .tile-fs-btn{
+  position:absolute;top:8px;left:8px;
+  width:32px;height:32px;border-radius:6px;
+  background:rgba(0,0,0,.7);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;border:1px solid rgba(255,255,255,.3);
+  opacity:0;transition:.15s;font-size:14px;padding:0;
+}
+.call-tile:hover .tile-fs-btn{opacity:1}
+.call-tile .tile-fs-btn:hover{background:rgba(35,165,90,.9);border-color:var(--green)}
+.call-tile:fullscreen{border-radius:0;border:none}
+.call-tile:fullscreen video{object-fit:contain}
+/* ⚡ Cards de atividades */
+.activity-card{
+  background:linear-gradient(180deg,var(--bg-1),var(--bg-3));
+  border:1px solid var(--div);
+  border-radius:12px;
+  padding:22px 16px;
+  text-align:center;
+  transition:.15s;
+  cursor:pointer;
+  display:block;
+  color:inherit;
+}
+.activity-card:hover{
+  border-color:var(--gold-l);
+  transform:translateY(-2px);
+  box-shadow:0 6px 20px rgba(192,57,43,.4);
+  background:linear-gradient(180deg,rgba(192,57,43,.1),var(--bg-3));
+}
+@media (max-width:768px){
   #app.active{grid-template-columns:1fr}
   .rail{position:fixed;top:0;bottom:0;left:0;width:72px;transform:translateX(-100%);transition:transform .25s cubic-bezier(.2,.8,.2,1);padding-top:calc(12px + var(--st));padding-bottom:calc(12px + var(--sb));z-index:40;box-shadow:4px 0 24px rgba(0,0,0,.8)}
   .rail.open{transform:translateX(0)}
@@ -557,6 +591,9 @@ input,textarea{user-select:text;-webkit-user-select:text}
       <button class="header-btn" id="btn-members-toggle" style="display:none" title="Membros">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3 1.3 3 3 3zm-8 0c1.7 0 3-1.3 3-3S9.7 5 8 5 5 6.3 5 8s1.3 3 3 3zm0 2c-2.3 0-7 1.2-7 3.5V19h14v-2.5C15 14.2 10.3 13 8 13zm8 0c-.3 0-.6 0-1 .1 1.2.8 2 2 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5z"/></svg>
       </button>
+            <button class="header-btn" id="btn-activities" title="Atividades">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M21 6H3c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+      </button>
       <button class="header-btn" id="btn-invite" style="display:none" title="Convidar">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M15 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>
       </button>
@@ -653,8 +690,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
   <div class="call-controls">
     <button class="ctrl-btn" id="c-mic" title="Microfone"><span class="tip">Microfone</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 10-6 0v6a3 3 0 003 3zM19 11a7 7 0 01-6 6.9V21h-2v-3.1A7 7 0 015 11h2a5 5 0 0010 0h2z"/></svg></button>
     <button class="ctrl-btn" id="c-cam" title="Câmera"><span class="tip">Câmera</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/></svg></button>
-    <button class="ctrl-btn" id="c-flip" title="Virar câmera" style="display:none"><span class="tip">Virar câmera</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-8 13c-2.76 0-5-2.24-5-5h1.5c0 1.93 1.57 3.5 3.5 3.5s3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5c-.75 0-1.42.24-1.98.63L13 8.5V5l3.5 3.5L13 12V8.5l-1.48 1.48c.32-.6.98-1 1.73-1 1.38 0 2.5 1.12 2.5 2.5s-1.12 2.5-2.5 2.5c-1.03 0-1.91-.63-2.28-1.5h-1.6c.42 1.74 2 3 3.88 3z"/></svg></button>
-    <button class="ctrl-btn" id="c-screen" title="Tela"><span class="tip">Compartilhar</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3a1 1 0 00-1 1v13a1 1 0 001 1h7v2H8v2h8v-2h-2v-2h7a1 1 0 001-1V4a1 1 0 00-1-1zm-1 13H4V5h16v11z"/></svg></button>
+    
     <button class="ctrl-btn danger" id="c-end" title="Sair"><span class="tip">Encerrar</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-1.6 0-3.2.3-4.6.7v3.1c0 .4-.2.7-.6.9-1 .5-1.9 1.1-2.7 1.9-.2.2-.4.3-.7.3s-.5-.1-.7-.3L.3 13a1 1 0 010-1.4C3.3 8.8 7.5 7 12 7s8.7 1.8 11.7 4.7c.2.2.3.4.3.7 0 .3-.1.5-.3.7l-2.5 2.5c-.2.2-.4.3-.7.3s-.5-.1-.7-.3c-.8-.8-1.7-1.4-2.7-1.9-.3-.2-.6-.5-.6-.9v-3.1C15.2 9.3 13.6 9 12 9z"/></svg></button>
   </div>
 </div>
@@ -732,6 +768,34 @@ input,textarea{user-select:text;-webkit-user-select:text}
       <div class="save-bar" id="srv-settings-save-bar">
         <button class="btn-cancel" id="srv-settings-cancel">Cancelar</button>
         <button class="btn-save" id="srv-settings-save">💾 Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="activities-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <button class="back-modal" onclick="closeModal('activities-modal')">←</button>
+      <h2>🎮 Atividades</h2>
+      <div class="spacer"></div>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--txt-mut);font-size:13px;margin-bottom:16px;line-height:1.5">Escolha um jogo para jogar com seus amigos. Os jogos abrem em uma nova aba.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <a href="https://www.trucoonline.com.br/" target="_blank" rel="noopener" class="activity-card">
+          <div style="font-size:52px;margin-bottom:8px">🃏</div>
+          <div style="font-weight:800;color:#fff;font-size:15px;letter-spacing:.5px">TRUCO</div>
+          <div style="font-size:11px;color:var(--txt-mut);margin-top:4px">Truco Online</div>
+        </a>
+        <a href="https://www.unoonline.net/" target="_blank" rel="noopener" class="activity-card">
+          <div style="font-size:52px;margin-bottom:8px">🎴</div>
+          <div style="font-weight:800;color:#fff;font-size:15px;letter-spacing:.5px">UNO</div>
+          <div style="font-size:11px;color:var(--txt-mut);margin-top:4px">Uno Online</div>
+        </a>
+      </div>
+      <div style="margin-top:16px;padding:12px;background:rgba(192,57,43,.08);border-radius:8px;border-left:3px solid var(--gold-l);font-size:12px;color:var(--txt-mut);line-height:1.5">
+        💡 <b style="color:var(--gold-l)">Dica:</b> compartilhe sua tela na call enquanto joga com os amigos!
       </div>
     </div>
   </div>
@@ -1601,6 +1665,9 @@ async function acceptDmRing(ringId){
   const ring = State.activeRings[ringId];
   if (!ring) return;
   delete State.activeRings[ringId];
+  /* ⚡ Remove o toast IMEDIATAMENTE ao clicar em Atender */
+  const el = document.querySelector(`.toast[data-ring-id="${ringId}"]`);
+  if (el) el.remove();
   try { await Backend.cancelDmRing(ringId); } catch(e){}
   const friend = State.users[ring.from];
   const title = friend ? `Chamada com ${friend.displayName}` : 'Chamada';
@@ -2439,17 +2506,10 @@ async function listVideoDevices(){
     return devs.filter(d => d.kind === 'videoinput');
   } catch { return []; }
 }
-
 async function updateFlipButtonVisibility(){
-  if (!State.call.active || !State.call.camOn){
-    $('c-flip').style.display = 'none';
-    return;
-  }
-  const cams = await listVideoDevices();
-  State.availableCameras = cams;
-  $('c-flip').style.display = cams.length >= 2 ? 'flex' : 'none';
+  /* ⚡ Botão de virar câmera removido */
+  return;
 }
-
 async function startCall(rid, title, serverId, isDmCall, dmFriendId){
   if (State.call.active){ toast('Já em chamada','Saia antes de entrar em outra.','error'); return; }
   if (serverId && isMutedIn(serverId)){ toast('Você está silenciado', 'Não pode entrar em chamadas neste servidor.', 'error'); return; }
@@ -2528,14 +2588,30 @@ async function startCall(rid, title, serverId, isDmCall, dmFriendId){
         });
       } catch(e){ console.warn(e); }
     });
-    peer.on('call', (call)=>{
+        peer.on('call', (call)=>{
       call.answer(State.call.localStream);
       const remoteId = call.peer; 
       const info = State.call.remoteInfo[remoteId] || { name:'Participante' };
       const v = createRemoteTile(remoteId, info.name, info.avatar);
-      call.on('stream', stream=>{ attachRemoteStream(v, stream); });
-      call.on('close', ()=>{ removeRemoteTile(remoteId); });
-      call.on('error', ()=>{ removeRemoteTile(remoteId); });
+      /* ⚡ Conta streams desse peer: 1º = câmera, 2º = tela */
+      let streamCount = 0;
+      call.on('stream', stream=>{
+        streamCount++;
+        if (streamCount === 1){
+          attachRemoteStream(v, stream);
+        } else {
+          /* Tela compartilhada (stream só de vídeo, sem áudio) */
+          const hasAudio = stream.getAudioTracks().length > 0;
+          if (!hasAudio) {
+            createRemoteScreenTile(remoteId, info.name, info.avatar, stream);
+          } else {
+            /* Por segurança, se vier áudio junto, é a câmera */
+            attachRemoteStream(v, stream);
+          }
+        }
+      });
+      call.on('close', ()=>{ removeRemoteTile(remoteId); removeRemoteScreenTile(remoteId); });
+      call.on('error', ()=>{ removeRemoteTile(remoteId); removeRemoteScreenTile(remoteId); });
       State.call.calls[remoteId] = call;
     });
     peer.on('error', e=>console.warn('Peer erro:', e.type));
@@ -2566,6 +2642,48 @@ function addLocalTile(){
   const tile = document.createElement('div'); tile.className = 'call-tile'; tile.id = 'tile-local';
   tile.innerHTML = `<div class="placeholder" id="local-placeholder"><div class="avatar">${State.me.avatar ? `<img src="${esc(State.me.avatar)}"/>` : initials(State.me.displayName)}</div></div><video id="local-video" autoplay muted playsinline style="display:none"></video><div class="tile-name"><span class="mic" id="local-mic"></span>${esc(State.me.displayName)} (você)</div>`;
   grid.appendChild(tile); updateGridLayout();
+}
+/* ⚡ Tile separado para a TELA compartilhada (não substitui a câmera) */
+function createRemoteScreenTile(peerId, name, avatar, stream){
+  const id = 'screen-' + peerId.replace(/[^a-z0-9]/gi,'_');
+  let tile = $(id);
+  if (tile){
+    const v = tile.querySelector('video');
+    if (v){ v.srcObject = stream; v.play().catch(()=>{}); }
+    return;
+  }
+  const grid = $('call-grid');
+  tile = document.createElement('div');
+  tile.className = 'call-tile screen-tile';
+  tile.id = id;
+  tile.innerHTML = `
+    <video autoplay playsinline muted></video>
+    <button class="tile-fs-btn" title="Tela cheia">⛶</button>
+    <div class="tile-name"><span class="mic"></span>${esc(name)} · 🖥 TELA</div>
+    <div class="sharing-badge">🖥 TELA</div>
+  `;
+  grid.appendChild(tile);
+  const v = tile.querySelector('video');
+  v.srcObject = stream;
+  v.play().catch(()=>{});
+  const fsBtn = tile.querySelector('.tile-fs-btn');
+  fsBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (!document.fullscreenElement){
+      if (tile.requestFullscreen) tile.requestFullscreen();
+      else if (tile.webkitRequestFullscreen) tile.webkitRequestFullscreen();
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+    }
+  };
+  updateGridLayout();
+}
+
+function removeRemoteScreenTile(peerId){
+  const id = 'screen-' + peerId.replace(/[^a-z0-9]/gi,'_');
+  const el = $(id);
+  if (el) el.remove();
+  updateGridLayout();
 }
 
 function createRemoteTile(peerId, name, avatar){
@@ -2763,36 +2881,29 @@ $('c-screen').onclick = async ()=>{
     });
     const screenTrack = s.getVideoTracks()[0];
     State.call.screenStream = s;
-    
-    if (State.call.localStream){
-      State.call.localStream.getVideoTracks().forEach(t => { try { t.stop(); } catch(e){} State.call.localStream.removeTrack(t); });
-      State.call.localStream.addTrack(screenTrack);
-    } else {
-      State.call.localStream = new MediaStream([screenTrack]);
-    }
-    
-    Object.values(State.call.calls).forEach(call => {
+    /* ⚡ Adiciona a tela como TRACK SEPARADO — a câmera continua ligada e indo pro outro lado */
+    State.call.screenSenders = {};
+    Object.entries(State.call.calls).forEach(([peerId, call]) => {
       try {
         const pc = call.peerConnection;
         if (!pc) return;
-        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
-        if (sender) sender.replaceTrack(screenTrack);
-        else pc.addTrack(screenTrack, State.call.localStream);
-      } catch(e){ console.warn('Erro ao enviar tela:', e); }
+        const screenOnlyStream = new MediaStream([screenTrack]);
+        const sender = pc.addTrack(screenTrack, screenOnlyStream);
+        State.call.screenSenders[peerId] = sender;
+      } catch(e){ console.warn('addTrack screen falhou:', e); }
     });
     
+    /* Preview local */
     $('c-screen').classList.add('sharing');
     $('screen-share-container').classList.add('active');
     $('screen-video').srcObject = s;
     $('call-grid').classList.add('with-screenshare');
     $('screen-label-text').textContent = 'VOCÊ ESTÁ COMPARTILHANDO';
-    $('c-cam').classList.remove('active');
-    $('c-flip').style.display = 'none';
     
-    s.getVideoTracks()[0].onended = ()=> stopScreenShare();
+    screenTrack.onended = ()=> stopScreenShare();
     
     if (State.call.roomId){ try { await Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: true }); } catch(e){} }
-    toast('Tela compartilhada', 'Todos os participantes estão vendo.', 'success');
+    toast('Tela compartilhada', 'Sua câmera continua ativa para todos.', 'success');
   } catch(e){ 
     if (e.name !== 'AbortError') toast('Tela','Não foi possível compartilhar.','error'); 
   }
@@ -2803,6 +2914,16 @@ function stopScreenShare(){
     State.call.screenStream.getTracks().forEach(t=>t.stop()); 
     State.call.screenStream = null; 
   }
+  /* ⚡ Remove o track da tela de cada peer — câmera continua intacta */
+  if (State.call.screenSenders){
+    Object.entries(State.call.screenSenders).forEach(([peerId, sender]) => {
+      try {
+        const call = State.call.calls[peerId];
+        if (call && call.peerConnection && sender) call.peerConnection.removeTrack(sender);
+      } catch(e){}
+    });
+    State.call.screenSenders = {};
+  }
   $('c-screen').classList.remove('sharing'); 
   $('screen-share-container').classList.remove('active'); 
   $('call-grid').classList.remove('with-screenshare'); 
@@ -2812,33 +2933,6 @@ function stopScreenShare(){
   
   if (State.call.roomId && backendReady){ 
     Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: false }).catch(()=>{}); 
-  }
-  
-  if (State.call.camOn && State.call.localStream){
-    const vc = VIDEO_QUALITIES[State.settings.videoQuality] || VIDEO_QUALITIES['720'];
-    const constraints = { width: vc.width, height: vc.height, frameRate: vc.frameRate };
-    if (State.currentVideoDeviceId) constraints.deviceId = { ideal: State.currentVideoDeviceId };
-    navigator.mediaDevices.getUserMedia({ video: constraints, audio: false })
-      .then(newCam => {
-        const camTrack = newCam.getVideoTracks()[0];
-        State.call.localStream.getVideoTracks().forEach(t => { try { t.stop(); } catch(e){} State.call.localStream.removeTrack(t); });
-        State.call.localStream.addTrack(camTrack);
-        attachLocalStream();
-        Object.values(State.call.calls).forEach(call => {
-          try { const pc = call.peerConnection; if (!pc) return; const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video'); if (sender) sender.replaceTrack(camTrack); } catch(e){}
-        });
-        $('c-cam').classList.add('active');
-        setTimeout(()=> updateFlipButtonVisibility(), 400);
-      })
-      .catch(e => console.warn('Erro ao restaurar câmera:', e));
-  } else {
-    if (State.call.localStream){
-      State.call.localStream.getVideoTracks().forEach(t => { try { t.stop(); } catch(e){} State.call.localStream.removeTrack(t); });
-    }
-    Object.values(State.call.calls).forEach(call => {
-      try { const pc = call.peerConnection; if (!pc) return; const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video'); if (sender) sender.replaceTrack(null); } catch(e){}
-    });
-    $('c-cam').classList.remove('active');
   }
 }
 
@@ -2923,6 +3017,7 @@ $('btn-copy-invite').onclick = ()=>{
   else { const ta = document.createElement('textarea'); ta.value = code; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Copiado!', code, 'success'); }
 };
 $('btn-invite').onclick = ()=>{ const srv = State.servers.find(s=>s.id === State.activeServer); if (srv) showInviteModal(srv); };
+$('btn-activities').onclick = ()=> openModal('activities-modal');
 
 let settingsTab = 'account';
 function openModal(id){ $(id).classList.add('active'); }
