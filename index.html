@@ -471,7 +471,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
 </style>
 </head>
 <body>
-
+  
 <div id="splash" class="screen active">
   <div class="splash-logo" id="splash-logo"></div>
   <div class="splash-name">EMSCORD</div>
@@ -880,7 +880,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
 <div id="toasts"></div>
 
 <script>
-const LOGO_SVG = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  const LOGO_SVG = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <radialGradient id="badgeBg" cx="50%" cy="40%" r="65%"><stop offset="0%" stop-color="#e74c3c"/><stop offset="60%" stop-color="#c0392b"/><stop offset="100%" stop-color="#641e16"/></radialGradient>
     <linearGradient id="bandGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#641e16"/><stop offset="50%" stop-color="#e74c3c"/><stop offset="100%" stop-color="#641e16"/></linearGradient>
@@ -901,6 +901,63 @@ const LOGO_SVG = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
   <text x="100" y="134" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="44" text-anchor="middle" fill="url(#emsText)" font-style="italic" letter-spacing="-2" filter="url(#emsGlow)">EMS</text>
 </svg>`;
 
+/* ⚡ SONS do Discord (gerados via Web Audio API — sem arquivos externos) */
+let __audioCtx = null;
+function __getAC(){
+  try {
+    if (!__audioCtx) __audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (__audioCtx.state === 'suspended') __audioCtx.resume().catch(()=>{});
+    return __audioCtx;
+  } catch(e){ return null; }
+}
+function __tone(freqs, durs, vol = 0.2){
+  const ac = __getAC(); if (!ac) return;
+  let t = ac.currentTime;
+  freqs.forEach((f, i) => {
+    const osc = ac.createOscillator(), g = ac.createGain();
+    osc.type = 'sine'; osc.frequency.value = f;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.015);
+    g.gain.linearRampToValueAtTime(0, t + durs[i]);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(t); osc.stop(t + durs[i] + 0.03);
+    t += durs[i] * 0.85;
+  });
+}
+function playJoinSound(){  __tone([587, 880], [0.10, 0.14], 0.20); }
+function playLeaveSound(){ __tone([880, 587], [0.10, 0.14], 0.20); }
+function playRingPulse(){  __tone([880, 880, 1108, 1108], [0.10, 0.10, 0.10, 0.16], 0.22); }
+let __ringInterval = null;
+function startRinging(){
+  if (__ringInterval) return;
+  playRingPulse();
+  __ringInterval = setInterval(playRingPulse, 2400);
+}
+function stopRinging(){
+  if (__ringInterval){ clearInterval(__ringInterval); __ringInterval = null; }
+}
+
+/* Aviso de chamada recebida (DM) */
+function showIncomingCallToast(ringId, fromName){
+  const wrap = $('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast call'; el.dataset.ringId = ringId;
+  el.style.pointerEvents = 'auto';
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="font-size:22px">📞</div>
+    <div style="flex:1;min-width:140px">
+      <div class="t-title">${esc(fromName)} está te ligando…</div>
+      <div class="t-body">Clique em Atender para entrar</div>
+    </div>
+    <button id="ring-accept-${ringId}" class="btn-brand" style="padding:8px 14px;font-size:12px">Atender</button>
+    <button id="ring-reject-${ringId}" class="btn-brand" style="padding:8px 14px;font-size:12px;background:linear-gradient(180deg,#e74c3c,#da373c)">Recusar</button>
+  </div>`;
+  wrap.appendChild(el);
+  el.querySelector(`#ring-accept-${ringId}`).onclick = () => acceptDmRing(ringId);
+  el.querySelector(`#ring-reject-${ringId}`).onclick = () => rejectDmRing(ringId);
+  setTimeout(() => { if (el.parentNode) { el.remove(); stopRinging(); } }, 32000);
+}
+
 const GOOGLE_CLIENT_ID = "36828433996-6a677fpem8dt6sim3kmqgn8lt1tu46ch.apps.googleusercontent.com";
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCA-L4fP1cAGi2gjT31vXZN-af1ySZcv5U",
@@ -912,7 +969,7 @@ const FIREBASE_CONFIG = {
   measurementId: "G-B71TKSZXM3"
 };
 
-/* ⚡ PEER_CONFIG com STUN + TURN — resolve chamadas entre redes diferentes (IPs públicos distintos) */
+/* ⚡ PEER_CONFIG com STUN + TURN — resolve chamadas entre redes diferentes */
 const PEER_CONFIG = {
   host: '0.peerjs.com',
   port: 443,
@@ -920,14 +977,20 @@ const PEER_CONFIG = {
   path: '/',
   config: {
     iceServers: [
-      /* STUN — descobre o IP público de cada participante */
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
-      /* TURN — relay quando STUN falha (NAT simétrico, firewall, etc.)
-         ⚠️ Este é um servidor TURN PÚBLICO de testes.
-         Para produção, troque por Cloudflare Realtime TURN ou coturn próprio.
-         Veja: https://developers.cloudflare.com/realtime/turn/ */
+      { urls: 'stun:stun3.l.google.com:19302' },
+      {
+        urls: [
+          'turn:openrelay.metered.ca:80',
+          'turn:openrelay.metered.ca:443',
+          'turn:openrelay.metered.ca:443?transport=tcp',
+          'turns:openrelay.metered.ca:443?transport=tcp'
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
       {
         urls: [
           'turn:turn.evan-brass.net',
@@ -1025,7 +1088,10 @@ const State = {
   call:{ active:false, minimized:false, peer:null, localStream:null, screenStream:null,
          micOn:true, camOn:false, startedAt:0, timer:null, roomId:null, serverId:null,
          calls:{}, screenCalls:{}, remoteScreenCalls:{},
-         roomUnsub:null, remoteInfo:{}, remoteScreenSharer:null }
+         roomUnsub:null, remoteInfo:{}, remoteScreenSharer:null,
+         knownMembers:new Set(), isDmCall:false, dmCallFriendId:null },
+  dmRingsSub:null,
+  activeRings:{}
 };
 
 let fb = null;
@@ -1239,7 +1305,18 @@ const Backend = {
   subscribeVoiceRoom(rid, cb){
     return fb.collection('voiceRooms').doc(rid).collection('members').onSnapshot(s=>cb(s.docs.map(d=>({ id:d.id, ...d.data() }))));
   },
-  async updateVoiceMember(rid, userId, patch){ try { await fb.collection('voiceRooms').doc(rid).collection('members').doc(userId).update(patch); } catch(e){} }
+  async updateVoiceMember(rid, userId, patch){ try { await fb.collection('voiceRooms').doc(rid).collection('members').doc(userId).update(patch); } catch(e){} },
+
+  /* ⚡ Ring de chamada em DM */
+  async startDmRing(dmId, from, to, fromName){
+    await fb.collection('dmRings').doc(dmId).set({ from, to, fromName, ts: Date.now() });
+  },
+  async cancelDmRing(dmId){
+    try { await fb.collection('dmRings').doc(dmId).delete(); } catch(e){}
+  },
+  subscribeMyRings(myId, cb){
+    return fb.collection('dmRings').where('to','==',myId).onSnapshot(s=>cb(s.docs.map(d=>({ id:d.id, ...d.data() }))));
+  }
 };
 
 function startPresenceHeartbeat(){
@@ -1496,6 +1573,45 @@ async function setupListeners(){
     debounceUnread();
     setTimeout(()=> subscribeAllVoiceRooms(), 400);
   });
+
+  /* ⚡ Escuta rings de DM */
+  if (State.dmRingsSub) { try { State.dmRingsSub(); } catch(e){} }
+  State.dmRingsSub = Backend.subscribeMyRings(State.me.id, rings=>{
+    rings.forEach(r=>{
+      if (!State.activeRings[r.id]){
+        State.activeRings[r.id] = r;
+        startRinging();
+        showIncomingCallToast(r.id, r.fromName || 'Alguém');
+      }
+    });
+    Object.keys(State.activeRings).forEach(id=>{
+      if (!rings.find(r=>r.id === id)){
+        delete State.activeRings[id];
+        const el = document.querySelector(`.toast[data-ring-id="${id}"]`);
+        if (el) el.remove();
+        if (Object.keys(State.activeRings).length === 0) stopRinging();
+      }
+    });
+  });
+}
+
+/* ⚡ Funções de atender/recusar */
+async function acceptDmRing(ringId){
+  stopRinging();
+  const ring = State.activeRings[ringId];
+  if (!ring) return;
+  delete State.activeRings[ringId];
+  try { await Backend.cancelDmRing(ringId); } catch(e){}
+  const friend = State.users[ring.from];
+  const title = friend ? `Chamada com ${friend.displayName}` : 'Chamada';
+  startCall('dm__' + ringId, title, null, true, ring.from);
+}
+async function rejectDmRing(ringId){
+  stopRinging();
+  delete State.activeRings[ringId];
+  const el = document.querySelector(`.toast[data-ring-id="${ringId}"]`);
+  if (el) el.remove();
+  try { await Backend.cancelDmRing(ringId); } catch(e){}
 }
 
 function canManageServer(){
@@ -1852,18 +1968,18 @@ function renderServerSidebar(wrap, srv){
   info.querySelector('#btn-open-members').onclick = ()=> openMembersPanel();
   wrap.appendChild(info);
 }
-
+  
 function openServerSettings(srv){
   const isOwner = State.me.id === srv.owner;
   State.serverSettingsTarget = srv;
   State.serverSettingsImage = srv.image || '';
-
+  
   const imgRow = $('srv-settings-img-row');
   const nameRow = $('srv-settings-name-row');
   const iconRow = $('srv-settings-icon-row');
   const saveBar = $('srv-settings-save-bar');
   const notice = $('srv-settings-notice');
-
+  
   if (isOwner){
     imgRow.style.display = 'flex';
     nameRow.style.display = 'flex';
@@ -1883,15 +1999,15 @@ function openServerSettings(srv){
     saveBar.style.display = 'none';
     notice.style.display = 'flex';
   }
-
+  
   $('srv-settings-invite').textContent = srv.inviteCode || '—';
   openModal('server-settings-modal');
 }
 
 $('srv-settings-img-input').addEventListener('change', async (e)=>{
   const file = e.target.files[0]; if (!file) return;
-  try {
-    const dataUrl = await resizeImage(file, 200, 0.75);
+  try { 
+    const dataUrl = await resizeImage(file, 200, 0.75); 
     State.serverSettingsImage = dataUrl;
     $('srv-settings-img-preview').innerHTML = `<img src="${dataUrl}"/>`;
     $('srv-settings-img-clear').style.display = 'inline-flex';
@@ -1977,7 +2093,7 @@ function switchView(v){
     const dmFriend = getDmFriend(State.activeChannel);
     const srv = State.servers.find(s=>s.id === State.activeServer);
     const ch = srv ? (State.channels[srv.id] || []).find(c=>c.id === State.activeChannel) : null;
-    if (dmFriend){ headerVoice.innerHTML = ''; $('main-title').innerHTML = `<span class="hash">@</span><span>${esc(dmFriend.displayName)}</span>`; callBtn.style.display = 'flex'; callBtn.onclick = ()=> startCall('dm__' + dmId(State.me.id, dmFriend.id), `Chamada com ${dmFriend.displayName}`, null); }
+    if (dmFriend){ headerVoice.innerHTML = ''; $('main-title').innerHTML = `<span class="hash">@</span><span>${esc(dmFriend.displayName)}</span>`; callBtn.style.display = 'flex'; callBtn.onclick = ()=> startDmCall(dmFriend); }
     else if (ch && srv){ $('main-title').innerHTML = `<span class="hash">#</span><span>${esc(ch.name)}</span>`; callBtn.style.display = 'none'; renderHeaderVoiceAvatars(); }
     else { headerVoice.innerHTML = ''; callBtn.style.display = 'none'; }
     renderMessages();
@@ -2295,10 +2411,18 @@ function renderFriends(){
       row.innerHTML = `<div class="avatar">${other.avatar ? `<img src="${other.avatar}"/>` : initials(other.displayName)}<div class="sd ${st}"></div></div><div class="fr-info"><div class="fr-name">${esc(other.displayName)}</div><div class="fr-sub">@${esc(other.username)}<b>#${other.discriminator || ''}</b> · ${inCall ? '📞 Em chamada' : online ? '🟢 Online' : '⚫ Offline'}</div></div><div class="fr-actions"><button class="friend-action-btn" data-act="dm" title="Mensagem"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg></button><button class="friend-action-btn" data-act="call" title="Ligar"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/></svg></button></div>`;
       row.onclick = ()=> openDm(other);
       row.querySelector('[data-act="dm"]').onclick = e=>{ e.stopPropagation(); openDm(other); };
-      row.querySelector('[data-act="call"]').onclick = e=>{ e.stopPropagation(); startCall('dm__' + dmId(State.me.id, other.id), `Chamada com ${other.displayName}`, null); };
+      row.querySelector('[data-act="call"]').onclick = e=>{ e.stopPropagation(); startDmCall(other); };
       body.appendChild(row);
     }
   });
+}
+
+/* ⚡ Inicia chamada em DM: dispara o ring + entra na sala */
+async function startDmCall(friend){
+  if (State.call.active){ toast('Já em chamada','Saia antes de entrar em outra.','error'); return; }
+  const cid = dmId(State.me.id, friend.id);
+  try { await Backend.startDmRing(cid, State.me.id, friend.id, State.me.displayName); } catch(e){ console.warn(e); }
+  startCall('dm__' + cid, `Chamada com ${friend.displayName}`, null, true, friend.id);
 }
 
 function openDm(other){
@@ -2308,6 +2432,7 @@ function openDm(other){
   renderRail(); renderSidebar(); subscribeActiveMessages(); switchView('chat');
 }
 
+/* ========== WEBRTC ========== */
 async function listVideoDevices(){
   try {
     const devs = await navigator.mediaDevices.enumerateDevices();
@@ -2325,7 +2450,7 @@ async function updateFlipButtonVisibility(){
   $('c-flip').style.display = cams.length >= 2 ? 'flex' : 'none';
 }
 
-async function startCall(rid, title, serverId){
+async function startCall(rid, title, serverId, isDmCall, dmFriendId){
   if (State.call.active){ toast('Já em chamada','Saia antes de entrar em outra.','error'); return; }
   if (serverId && isMutedIn(serverId)){ toast('Você está silenciado', 'Não pode entrar em chamadas neste servidor.', 'error'); return; }
   toast('Carregando...', 'Preparando chamada', 'call');
@@ -2335,6 +2460,9 @@ async function startCall(rid, title, serverId){
   State.call.active = true; State.call.startedAt = Date.now(); State.call.roomId = rid; State.call.serverId = serverId;
   State.call.minimized = false; State.call.timer = setInterval(updateCallTimer, 500);
   State.call.calls = {}; State.call.screenCalls = {}; State.call.remoteScreenCalls = {}; State.call.remoteInfo = {}; State.call.remoteScreenSharer = null;
+  State.call.knownMembers = new Set();
+  State.call.isDmCall = !!isDmCall;
+  State.call.dmCallFriendId = dmFriendId || null;
   State.currentVideoDeviceId = null;
   $('call-overlay').classList.add('active'); $('call-grid').innerHTML = ''; $('call-grid').classList.remove('with-screenshare');
   $('call-title').textContent = title; $('cw-title').textContent = title;
@@ -2344,9 +2472,9 @@ async function startCall(rid, title, serverId){
   const quality = State.settings.videoQuality || '720';
   const vc = VIDEO_QUALITIES[quality] || VIDEO_QUALITIES['720'];
   try {
-    State.call.localStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: vc.width, height: vc.height, frameRate: vc.frameRate },
-      audio: buildAudioConstraints()
+    State.call.localStream = await navigator.mediaDevices.getUserMedia({ 
+      video: { width: vc.width, height: vc.height, frameRate: vc.frameRate }, 
+      audio: buildAudioConstraints() 
     });
     const vTrack = State.call.localStream.getVideoTracks()[0];
     if (vTrack){
@@ -2356,10 +2484,10 @@ async function startCall(rid, title, serverId){
     State.call.camOn = true; $('c-cam').classList.add('active'); attachLocalStream(); startMicMeter(State.call.localStream);
     setTimeout(()=> updateFlipButtonVisibility(), 500);
   } catch(e){
-    try {
-      State.call.localStream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() });
-      State.call.camOn = false; startMicMeter(State.call.localStream);
-      toast('Sem câmera','Entramos só com áudio.','call');
+    try { 
+      State.call.localStream = await navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints() }); 
+      State.call.camOn = false; startMicMeter(State.call.localStream); 
+      toast('Sem câmera','Entramos só com áudio.','call'); 
     }
     catch(e2){ toast('Sem dispositivos','Não foi possível acessar.','error'); }
   }
@@ -2373,15 +2501,39 @@ async function startCall(rid, title, serverId){
     peer.on('open', async ()=>{
       try {
         await Backend.joinVoiceRoom(rid, { userId: State.me.id, peerId: myPeerId, displayName: State.me.displayName, avatar: State.me.avatar || '', joinedAt: Date.now(), micOn: State.call.micOn, camOn: State.call.camOn, sharing: false });
-        State.call.roomUnsub = Backend.subscribeVoiceRoom(rid, members=>{ handleRoomMembers(members, myPeerId); });
+        State.call.roomUnsub = Backend.subscribeVoiceRoom(rid, members=>{
+          /* ⚡ Detecta entrada/saída de membros e toca som */
+          const currentIds = new Set(members.map(m => m.userId));
+          if (State.call.knownMembers.size > 0){
+            members.forEach(m => {
+              if (m.userId !== State.me.id && !State.call.knownMembers.has(m.userId)){
+                playJoinSound();
+                toast('Entrou na chamada', m.displayName, 'call');
+              }
+            });
+            State.call.knownMembers.forEach(id => {
+              if (id !== State.me.id && !currentIds.has(id)){
+                playLeaveSound();
+                const u = State.users[id];
+                if (u) toast('Saiu da chamada', u.displayName, 'call');
+              }
+            });
+          } else {
+            members.forEach(m => {
+              if (m.userId !== State.me.id) playJoinSound();
+            });
+          }
+          State.call.knownMembers = currentIds;
+          handleRoomMembers(members, myPeerId);
+        });
       } catch(e){ console.warn(e); }
     });
     peer.on('call', (call)=>{
       call.answer(State.call.localStream);
-      const remoteId = call.peer;
+      const remoteId = call.peer; 
       const info = State.call.remoteInfo[remoteId] || { name:'Participante' };
       const v = createRemoteTile(remoteId, info.name, info.avatar);
-      call.on('stream', stream=>{ if (v) v.srcObject = stream; });
+      call.on('stream', stream=>{ attachRemoteStream(v, stream); });
       call.on('close', ()=>{ removeRemoteTile(remoteId); });
       call.on('error', ()=>{ removeRemoteTile(remoteId); });
       State.call.calls[remoteId] = call;
@@ -2404,7 +2556,7 @@ function handleRoomMembers(members, myPeerId){
     if (State.call.calls[m.peerId]) return;
     if (myPeerId < m.peerId){
       const call = State.call.peer.call(m.peerId, State.call.localStream);
-      if (call){ const v = createRemoteTile(m.peerId, m.displayName, m.avatar); call.on('stream', stream=>{ if (v) v.srcObject = stream; }); call.on('close', ()=>{ removeRemoteTile(m.peerId); }); call.on('error', ()=>{ removeRemoteTile(m.peerId); }); State.call.calls[m.peerId] = call; }
+      if (call){ const v = createRemoteTile(m.peerId, m.displayName, m.avatar); call.on('stream', stream=>{ attachRemoteStream(v, stream); }); call.on('close', ()=>{ removeRemoteTile(m.peerId); }); call.on('error', ()=>{ removeRemoteTile(m.peerId); }); State.call.calls[m.peerId] = call; }
     }
   });
 }
@@ -2421,11 +2573,27 @@ function createRemoteTile(peerId, name, avatar){
   let tile = $(id); if (tile) return tile.querySelector('video');
   const grid = $('call-grid');
   tile = document.createElement('div'); tile.className = 'call-tile'; tile.id = id;
-  tile.innerHTML = `<div class="placeholder" id="${id}-ph"><div class="avatar">${avatar ? `<img src="${avatar}"/>` : initials(name)}</div></div><video autoplay playsinline style="display:none"></video><div class="tile-name"><span class="mic"></span>${esc(name)}</div>`;
+  tile.innerHTML = `<div class="placeholder" id="${id}-ph"><div class="avatar">${avatar ? `<img src="${avatar}"/>` : initials(name)}</div></div><video autoplay playsinline muted style="display:none"></video><div class="tile-name"><span class="mic"></span>${esc(name)}</div>`;
   grid.appendChild(tile);
   const v = tile.querySelector('video'); const ph = tile.querySelector('.placeholder');
-  v.addEventListener('loadedmetadata', ()=>{ v.style.display = 'block'; ph.style.display = 'none'; });
+  /* ⚡ Mostra o vídeo assim que o stream chegar (não espera loadedmetadata) */
+  v.addEventListener('loadeddata', ()=>{ v.style.display = 'block'; ph.style.display = 'none'; });
+  v.addEventListener('playing', ()=>{ v.style.display = 'block'; ph.style.display = 'none'; });
   updateGridLayout(); return v;
+}
+
+/* ⚡ Helper: anexa stream remoto mostrando o vídeo imediatamente */
+function attachRemoteStream(videoEl, stream){
+  if (!videoEl || !stream) return;
+  videoEl.srcObject = stream;
+  const tile = videoEl.closest('.call-tile');
+  const ph = tile ? tile.querySelector('.placeholder') : null;
+  videoEl.style.display = 'block';
+  if (ph) ph.style.display = 'none';
+  const tryPlay = ()=> videoEl.play().catch(e=>{
+    setTimeout(()=> videoEl.play().catch(()=>{}), 400);
+  });
+  tryPlay();
 }
 
 function removeRemoteTile(peerId){
@@ -2465,18 +2633,18 @@ $('c-flip').onclick = async ()=>{
       $('c-flip').style.display = 'none';
       return;
     }
-
+    
     const currentTrack = State.call.localStream.getVideoTracks()[0];
     const currentSettings = currentTrack ? currentTrack.getSettings() : {};
     let currentDeviceId = State.currentVideoDeviceId || currentSettings.deviceId;
-
+    
     let idx = cams.findIndex(c => c.deviceId === currentDeviceId);
     if (idx === -1) idx = 0;
     const nextIdx = (idx + 1) % cams.length;
     const nextCam = cams[nextIdx];
-
+    
     const vc = VIDEO_QUALITIES[State.settings.videoQuality] || VIDEO_QUALITIES['720'];
-
+    
     const newStream = await navigator.mediaDevices.getUserMedia({
       video: {
         deviceId: { exact: nextCam.deviceId },
@@ -2486,14 +2654,14 @@ $('c-flip').onclick = async ()=>{
       },
       audio: false
     });
-
+    
     const newTrack = newStream.getVideoTracks()[0];
     State.currentVideoDeviceId = nextCam.deviceId;
-
+    
     if (currentTrack){ try { currentTrack.stop(); } catch(e){} State.call.localStream.removeTrack(currentTrack); }
     State.call.localStream.addTrack(newTrack);
     attachLocalStream();
-
+    
     Object.values(State.call.calls).forEach(call => {
       try {
         const pc = call.peerConnection;
@@ -2502,7 +2670,7 @@ $('c-flip').onclick = async ()=>{
         if (sender) sender.replaceTrack(newTrack);
       } catch(e){ console.warn('Erro replaceTrack:', e); }
     });
-
+    
     const label = nextCam.label || `Câmera ${nextIdx + 1}`;
     toast('Câmera alterada', label, 'success');
   } catch(e){
@@ -2514,8 +2682,8 @@ $('c-flip').onclick = async ()=>{
 async function applyVideoQuality(newQuality){
   State.settings.videoQuality = newQuality; LS.set('settings', State.settings);
   if (State.call.active && State.call.camOn && State.call.localStream && !State.call.screenStream){
-    try {
-      const vc = VIDEO_QUALITIES[newQuality];
+    try { 
+      const vc = VIDEO_QUALITIES[newQuality]; 
       const constraints = { width: vc.width, height: vc.height, frameRate: vc.frameRate };
       if (State.currentVideoDeviceId) constraints.deviceId = { exact: State.currentVideoDeviceId };
       const newStream = await navigator.mediaDevices.getUserMedia({ video: constraints, audio: false });
@@ -2531,8 +2699,8 @@ async function applyVideoQuality(newQuality){
 $('c-cam').onclick = async ()=>{
   const btn = $('c-cam');
   if (!State.call.camOn){
-    try {
-      const vc = VIDEO_QUALITIES[State.settings.videoQuality] || VIDEO_QUALITIES['720'];
+    try { 
+      const vc = VIDEO_QUALITIES[State.settings.videoQuality] || VIDEO_QUALITIES['720']; 
       const constraints = { width: vc.width, height: vc.height, frameRate: vc.frameRate };
       if (State.currentVideoDeviceId) constraints.deviceId = { ideal: State.currentVideoDeviceId };
       const cam = await navigator.mediaDevices.getUserMedia({ video: constraints, audio:false });
@@ -2589,20 +2757,20 @@ document.addEventListener('msfullscreenchange', updateFullscreenIcon);
 $('c-screen').onclick = async ()=>{
   if (State.call.screenStream){ stopScreenShare(); return; }
   try {
-    const s = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false
+    const s = await navigator.mediaDevices.getDisplayMedia({ 
+      video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } }, 
+      audio: false 
     });
     const screenTrack = s.getVideoTracks()[0];
     State.call.screenStream = s;
-
+    
     if (State.call.localStream){
       State.call.localStream.getVideoTracks().forEach(t => { try { t.stop(); } catch(e){} State.call.localStream.removeTrack(t); });
       State.call.localStream.addTrack(screenTrack);
     } else {
       State.call.localStream = new MediaStream([screenTrack]);
     }
-
+    
     Object.values(State.call.calls).forEach(call => {
       try {
         const pc = call.peerConnection;
@@ -2612,7 +2780,7 @@ $('c-screen').onclick = async ()=>{
         else pc.addTrack(screenTrack, State.call.localStream);
       } catch(e){ console.warn('Erro ao enviar tela:', e); }
     });
-
+    
     $('c-screen').classList.add('sharing');
     $('screen-share-container').classList.add('active');
     $('screen-video').srcObject = s;
@@ -2620,32 +2788,32 @@ $('c-screen').onclick = async ()=>{
     $('screen-label-text').textContent = 'VOCÊ ESTÁ COMPARTILHANDO';
     $('c-cam').classList.remove('active');
     $('c-flip').style.display = 'none';
-
+    
     s.getVideoTracks()[0].onended = ()=> stopScreenShare();
-
+    
     if (State.call.roomId){ try { await Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: true }); } catch(e){} }
     toast('Tela compartilhada', 'Todos os participantes estão vendo.', 'success');
-  } catch(e){
-    if (e.name !== 'AbortError') toast('Tela','Não foi possível compartilhar.','error');
+  } catch(e){ 
+    if (e.name !== 'AbortError') toast('Tela','Não foi possível compartilhar.','error'); 
   }
 };
 
 function stopScreenShare(){
-  if (State.call.screenStream){
-    State.call.screenStream.getTracks().forEach(t=>t.stop());
-    State.call.screenStream = null;
+  if (State.call.screenStream){ 
+    State.call.screenStream.getTracks().forEach(t=>t.stop()); 
+    State.call.screenStream = null; 
   }
-  $('c-screen').classList.remove('sharing');
-  $('screen-share-container').classList.remove('active');
-  $('call-grid').classList.remove('with-screenshare');
-  $('screen-video').srcObject = null;
-
+  $('c-screen').classList.remove('sharing'); 
+  $('screen-share-container').classList.remove('active'); 
+  $('call-grid').classList.remove('with-screenshare'); 
+  $('screen-video').srcObject = null; 
+  
   if (document.fullscreenElement){ try { document.exitFullscreen(); } catch(e){} }
-
-  if (State.call.roomId && backendReady){
-    Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: false }).catch(()=>{});
+  
+  if (State.call.roomId && backendReady){ 
+    Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: false }).catch(()=>{}); 
   }
-
+  
   if (State.call.camOn && State.call.localStream){
     const vc = VIDEO_QUALITIES[State.settings.videoQuality] || VIDEO_QUALITIES['720'];
     const constraints = { width: vc.width, height: vc.height, frameRate: vc.frameRate };
@@ -2687,6 +2855,7 @@ function endCall(){
   if (!State.call.active && !State.call.minimized) return;
   if (document.fullscreenElement){ try { document.exitFullscreen(); } catch(e){} }
   const rid = State.call.roomId, myId = State.me?.id;
+  const wasDmCall = State.call.isDmCall;
   State.call.active = false; State.call.minimized = false; State.call.roomId = null; State.call.serverId = null;
   if (State.call.timer){ clearInterval(State.call.timer); State.call.timer = null; }
   if (State.call.localStream){ try { State.call.localStream.getTracks().forEach(t=>{ try { t.stop(); } catch(e){} }); } catch(e){} State.call.localStream = null; }
@@ -2703,6 +2872,13 @@ function endCall(){
   if (backendReady && State.me){
     Backend.updateUser(State.me.id, { inCall: false, lastSeen: Date.now() }).catch(()=>{});
   }
+  /* ⚡ Cancela ring do DM se existir */
+  if (wasDmCall && rid && rid.startsWith('dm__') && backendReady){
+    Backend.cancelDmRing(rid.slice(4)).catch(()=>{});
+  }
+  State.call.isDmCall = false; State.call.dmCallFriendId = null;
+  State.call.knownMembers = new Set();
+  stopRinging();
   toast('Chamada encerrada', 'Você saiu.', 'call');
 }
 
@@ -2789,16 +2965,16 @@ async function renderSettings(){
         <button class="btn-cancel" id="btn-account-cancel">Cancelar</button>
         <button class="btn-save" id="btn-account-save" disabled>💾 Salvar</button>
       </div>`;
-
+    
     State.accountPending = {};
     const avatarClearBtn = $('me-avatar-clear');
-
+    
     const fields = ['set-name','set-user','set-email','set-desc'];
     const checkChanges = ()=>{
       const hasChanges = Object.keys(State.accountPending).length > 0;
       $('btn-account-save').disabled = !hasChanges;
     };
-
+    
     fields.forEach(id=>{
       const el = $(id);
       el.addEventListener('input', ()=>{
@@ -2812,11 +2988,11 @@ async function renderSettings(){
         checkChanges();
       });
     });
-
+    
     $('me-avatar-input').addEventListener('change', async (e)=>{
       const file = e.target.files[0]; if (!file) return;
-      try {
-        const dataUrl = await resizeImage(file, 200, 0.75);
+      try { 
+        const dataUrl = await resizeImage(file, 200, 0.75); 
         State.accountPending.avatar = dataUrl;
         $('me-avatar-preview').innerHTML = `<img src="${dataUrl}"/>`;
         avatarClearBtn.style.display = 'inline-flex';
@@ -2830,7 +3006,7 @@ async function renderSettings(){
       avatarClearBtn.style.display = 'none';
       checkChanges();
     };
-
+    
     $('btn-account-save').onclick = async ()=>{
       const btn = $('btn-account-save');
       if (!Object.keys(State.accountPending).length) return;
@@ -2855,13 +3031,13 @@ async function renderSettings(){
         btn.disabled = false; btn.textContent = '💾 Salvar';
       }
     };
-
+    
     $('btn-account-cancel').onclick = ()=>{
       State.accountPending = {};
       renderSettings();
     };
   }
-
+  
   if (settingsTab === 'voice'){
     const devs = await navigator.mediaDevices.enumerateDevices().catch(()=>[]);
     const mics = devs.filter(d=>d.kind === 'audioinput'); const cams = devs.filter(d=>d.kind === 'videoinput');
@@ -2900,7 +3076,7 @@ async function renderSettings(){
       };
     });
   }
-
+  
   if (settingsTab === 'conn'){
     b.innerHTML = `<h3>Conexão</h3>
       <div class="setting-row"><label>Modo</label><div class="hint" style="color:${backendReady ? 'var(--green)' : 'var(--red)'}">${backendReady ? '🌐 Nuvem (Firebase) — mundial' : '❌ Firebase desconectado'}</div></div>
@@ -2908,18 +3084,18 @@ async function renderSettings(){
       <div class="setting-row"><label>Cache local</label><div class="hint" style="color:var(--green)">● Ativado (IndexedDB)</div></div>
       <div class="setting-row"><label>Google OAuth</label><div class="hint" style="color:var(--green)">● Configurado</div></div>
       <div class="setting-row"><label>PeerJS</label><div class="hint" style="color:${window.Peer?'var(--green)':'var(--gold-l)'}">${window.Peer?'● Carregado':'● Sob demanda'}</div></div>
-      <div class="setting-row"><label>Servidor TURN</label><div class="hint" style="color:var(--green)">● Ativo (turn.evan-brass.net)</div></div>
+      <div class="setting-row"><label>Servidor TURN</label><div class="hint" style="color:var(--green)">● Ativo (OpenRelay + Evan-Brass)</div></div>
       <div class="setting-row"><label>Heartbeat (presença)</label><div class="hint" style="color:var(--green)">● Ativo (a cada 30s)</div></div>`;
   }
 }
 
-$('btn-logout').onclick = ()=>{ if (confirm('Sair do EMSCORD?')){
-  if (State.call.active) endCall();
+$('btn-logout').onclick = ()=>{ if (confirm('Sair do EMSCORD?')){ 
+  if (State.call.active) endCall(); 
   if (State.me && backendReady) Backend.updateUser(State.me.id, { lastSeen: 0, inCall: false }).catch(()=>{});
   if (State.presenceInterval) clearInterval(State.presenceInterval);
   if (State.presenceTicker) clearInterval(State.presenceTicker);
-  LS.set('me', null);
-  location.reload();
+  LS.set('me', null); 
+  location.reload(); 
 } };
 $('btn-menu').onclick = ()=> toggleMobileMenu();
 $('btn-menu-friends').onclick = ()=> toggleMobileMenu();
