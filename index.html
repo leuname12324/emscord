@@ -439,8 +439,7 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .toast.call{border-left-color:#ef5350}
 .toast .t-title{font-weight:800;color:#fff;margin-bottom:2px;letter-spacing:.5px}
 .toast .t-body{color:var(--txt-mut);font-size:12px}
-@media (max-width:768px){
-  /* ⚡ Tile de screen share (separado do participante) */
+/* ⚡ Tile de screen share (separado do participante) */
 .call-tile.screen-tile{border-color:var(--green);box-shadow:0 0 20px rgba(35,165,90,.4)}
 .call-tile.screen-tile video{object-fit:contain;background:#000}
 .call-tile .tile-fs-btn{
@@ -689,8 +688,9 @@ input,textarea{user-select:text;-webkit-user-select:text}
   </div>
   <div class="call-controls">
     <button class="ctrl-btn" id="c-mic" title="Microfone"><span class="tip">Microfone</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 10-6 0v6a3 3 0 003 3zM19 11a7 7 0 01-6 6.9V21h-2v-3.1A7 7 0 015 11h2a5 5 0 0010 0h2z"/></svg></button>
-    <button class="ctrl-btn" id="c-cam" title="Câmera"><span class="tip">Câmera</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/></svg></button>
-    
+        <button class="ctrl-btn" id="c-cam" title="Câmera"><span class="tip">Câmera</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/></svg></button>
+    <button class="ctrl-btn" id="c-flip" title="Virar câmera" style="display:none"><span class="tip">Virar câmera</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2z"/></svg></button>
+    <button class="ctrl-btn" id="c-screen" title="Tela"><span class="tip">Compartilhar</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3a1 1 0 00-1 1v13a1 1 0 001 1h7v2H8v2h8v-2h-2v-2h7a1 1 0 001-1V4a1 1 0 00-1-1zm-1 13H4V5h16v11z"/></svg></button>
     <button class="ctrl-btn danger" id="c-end" title="Sair"><span class="tip">Encerrar</span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-1.6 0-3.2.3-4.6.7v3.1c0 .4-.2.7-.6.9-1 .5-1.9 1.1-2.7 1.9-.2.2-.4.3-.7.3s-.5-.1-.7-.3L.3 13a1 1 0 010-1.4C3.3 8.8 7.5 7 12 7s8.7 1.8 11.7 4.7c.2.2.3.4.3.7 0 .3-.1.5-.3.7l-2.5 2.5c-.2.2-.4.3-.7.3s-.5-.1-.7-.3c-.8-.8-1.7-1.4-2.7-1.9-.3-.2-.6-.5-.6-.9v-3.1C15.2 9.3 13.6 9 12 9z"/></svg></button>
   </div>
 </div>
@@ -2741,7 +2741,7 @@ $('c-mic').onclick = async ()=>{
   if (State.call.roomId){ try { await Backend.updateVoiceMember(State.call.roomId, State.me.id, { micOn: State.call.micOn }); } catch(e){} }
 };
 
-$('c-flip').onclick = async ()=>{
+if ($('c-flip')) $('c-flip').onclick = async ()=>{
   if (!State.call.localStream || !State.call.camOn){ return; }
   try {
     const cams = await listVideoDevices();
@@ -2872,7 +2872,7 @@ document.addEventListener('fullscreenchange', updateFullscreenIcon);
 document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
 document.addEventListener('msfullscreenchange', updateFullscreenIcon);
 
-$('c-screen').onclick = async ()=>{
+if ($('c-screen')) $('c-screen').onclick = async ()=>{
   if (State.call.screenStream){ stopScreenShare(); return; }
   try {
     const s = await navigator.mediaDevices.getDisplayMedia({ 
