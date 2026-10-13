@@ -1155,11 +1155,14 @@ const State = {
   availableCameras:[],
   presenceInterval:null,
   presenceTicker:null,
-  call:{ active:false, minimized:false, peer:null, localStream:null, screenStream:null,
+    call:{ active:false, minimized:false, peer:null, localStream:null, screenStream:null,
          micOn:true, camOn:false, startedAt:0, timer:null, roomId:null, serverId:null,
          calls:{}, screenCalls:{}, remoteScreenCalls:{},
          roomUnsub:null, remoteInfo:{}, remoteScreenSharer:null,
-         knownMembers:new Set(), isDmCall:false, dmCallFriendId:null },
+         knownMembers:new Set(), isDmCall:false, dmCallFriendId:null,
+         screenPeer:null, screenPeerId:null, screenRoomUnsub:null,
+         screenOutgoingCalls:{}, screenIncomingCalls:{},
+         currentMainPeerId:null },
   dmRingsSub:null,
   activeRings:{}
 };
@@ -2581,7 +2584,8 @@ async function startCall(rid, title, serverId, isDmCall, dmFriendId){
   if (window.Peer){
     const myPeerId = 'ems-' + rid.replace(/[^a-z0-9]/gi,'') + '-' + State.me.id;
     const peer = new Peer(myPeerId, PEER_CONFIG); State.call.peer = peer;
-    peer.on('open', async ()=>{
+        peer.on('open', async ()=>{
+      State.call.currentMainPeerId = myPeerId;
       try {
         await Backend.joinVoiceRoom(rid, { userId: State.me.id, peerId: myPeerId, displayName: State.me.displayName, avatar: State.me.avatar || '', joinedAt: Date.now(), micOn: State.call.micOn, camOn: State.call.camOn, sharing: false });
         State.call.roomUnsub = Backend.subscribeVoiceRoom(rid, members=>{
@@ -2611,56 +2615,46 @@ async function startCall(rid, title, serverId, isDmCall, dmFriendId){
         });
       } catch(e){ console.warn(e); }
     });
-            peer.on('call', (call)=>{
+                peer.on('call', (call)=>{
+      const incomingId = call.peer;
+      const isScreenCall = incomingId.endsWith('-screen');
+      const parentId = isScreenCall ? incomingId.slice(0, -7) : incomingId; /* remove "-screen" */
+
+      if (isScreenCall){
+        /* ⚡ Recebe a TELA — responde com stream vazio (só recebe) */
+        try { call.answer(new MediaStream()); } catch(e){ call.answer(); }
+        const info = State.call.remoteInfo[parentId] || { name:'Participante' };
+        State.call.screenIncomingCalls[incomingId] = call;
+        let attached = false;
+        call.on('stream', (stream) => {
+          if (attached) return;
+          attached = true;
+          createRemoteScreenTile(parentId, info.name, info.avatar, stream);
+        });
+        call.on('close', ()=>{
+          removeRemoteScreenTile(parentId);
+          delete State.call.screenIncomingCalls[incomingId];
+        });
+        call.on('error', ()=>{
+          removeRemoteScreenTile(parentId);
+          delete State.call.screenIncomingCalls[incomingId];
+        });
+        return;
+      }
+
+      /* Chamada normal (câmera + mic) */
       call.answer(State.call.localStream);
-      const remoteId = call.peer; 
+      const remoteId = incomingId;
       const info = State.call.remoteInfo[remoteId] || { name:'Participante' };
       const v = createRemoteTile(remoteId, info.name, info.avatar);
-      /* ⚡ Mapeia streams por ID — 1º = câmera, extra = tela */
-      const knownStreams = new Set();
-      let mainAttached = false;
-      const handleStream = (stream) => {
-        if (knownStreams.has(stream.id)) return;
-        knownStreams.add(stream.id);
-        const hasAudio = stream.getAudioTracks().length > 0;
-        const hasVideo = stream.getVideoTracks().length > 0;
-        if (!mainAttached && hasAudio && hasVideo){
-          /* Stream principal (câmera + mic) */
-          attachRemoteStream(v, stream);
-          mainAttached = true;
-        } else if (hasVideo && !hasAudio){
-          /* Screen share (só vídeo) */
-          createRemoteScreenTile(remoteId, info.name, info.avatar, stream);
-        } else if (!mainAttached){
-          attachRemoteStream(v, stream);
-          mainAttached = true;
-        }
-      };
-      /* PeerJS emite 'stream' uma vez, mas 'ontrack' na PC pega os extras */
-      call.on('stream', stream => handleStream(stream));
-      try {
-        const pc = call.peerConnection;
-        if (pc){
-          pc.addEventListener('track', (event) => {
-            const streams = event.streams || [];
-            streams.forEach(s => handleStream(s));
-          });
-          /* Também escuta quando alguém adiciona track novo via renegociação */
-          pc.addEventListener('negotiationneeded', () => {
-            pc.getReceivers().forEach(recv => {
-              if (recv.track && recv.track.kind === 'video'){
-                const sid = recv.track.id;
-                if (!knownStreams.has(sid)){
-                  const stream = new MediaStream([recv.track]);
-                  handleStream(stream);
-                }
-              }
-            });
-          });
-        }
-      } catch(e){ console.warn('ontrack bind falhou:', e); }
-      call.on('close', ()=>{ removeRemoteTile(remoteId); removeRemoteScreenTile(remoteId); });
-      call.on('error', ()=>{ removeRemoteTile(remoteId); removeRemoteScreenTile(remoteId); });
+      let attached = false;
+      call.on('stream', (stream) => {
+        if (attached) return;
+        attached = true;
+        attachRemoteStream(v, stream);
+      });
+      call.on('close', ()=>{ removeRemoteTile(remoteId); });
+      call.on('error', ()=>{ removeRemoteTile(remoteId); });
       State.call.calls[remoteId] = call;
     });
     peer.on('error', e=>console.warn('Peer erro:', e.type));
@@ -2669,8 +2663,36 @@ async function startCall(rid, title, serverId, isDmCall, dmFriendId){
 }
 
 function handleRoomMembers(members, myPeerId){
+  /* ⚡ Se alguém está apresentando tela, faz uma chamada própria pro peer da tela */
+  members.forEach(m => {
+    if (!m.isScreen) return;
+    if (!m.peerId) return;
+    if (State.call.screenIncomingCalls && State.call.screenIncomingCalls[m.peerId]) return;
+    try {
+      const screenCall = State.call.peer.call(m.peerId, new MediaStream());
+      if (!screenCall) return;
+      State.call.screenIncomingCalls[m.peerId] = screenCall;
+      let attached = false;
+      screenCall.on('stream', (stream) => {
+        if (attached) return;
+        attached = true;
+        createRemoteScreenTile(m.parentPeerId || m.peerId, m.displayName || 'Participante', m.avatar || '', stream);
+      });
+      screenCall.on('close', () => {
+        removeRemoteScreenTile(m.parentPeerId || m.peerId);
+        delete State.call.screenIncomingCalls[m.peerId];
+      });
+      screenCall.on('error', () => {
+        removeRemoteScreenTile(m.parentPeerId || m.peerId);
+        delete State.call.screenIncomingCalls[m.peerId];
+      });
+    } catch(e){ console.warn('screen call receive fail:', e); }
+  });
+
   members.forEach(m=>{
     if (m.peerId === myPeerId) return;
+    if (m.isScreen) return; /* pula membros de tela */
+    if (m.peerId && m.peerId.endsWith('-screen')) return;
     State.call.remoteInfo[m.peerId] = { name: m.displayName, avatar: m.avatar, sharing: !!m.sharing };
     const tileId = 'tile-' + m.peerId.replace(/[^a-z0-9]/gi,'_'); const tile = $(tileId);
     if (tile){
@@ -2967,74 +2989,104 @@ document.addEventListener('msfullscreenchange', updateFullscreenIcon);
 
 if ($('c-screen')) $('c-screen').onclick = async ()=>{
   if (State.call.screenStream){ stopScreenShare(); return; }
+  if (!State.call.roomId || !State.call.currentMainPeerId){
+    toast('Erro', 'Entre numa chamada antes de compartilhar.', 'error');
+    return;
+  }
   try {
-    const s = await navigator.mediaDevices.getDisplayMedia({ 
-      video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } }, 
-      audio: false 
+    const s = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
     });
-    const screenTrack = s.getVideoTracks()[0];
     State.call.screenStream = s;
-    /* ⚡ Adiciona a tela como TRACK SEPARADO — a câmera continua ligada e indo pro outro lado */
-    State.call.screenSenders = {};
-    Object.entries(State.call.calls).forEach(([peerId, call]) => {
-      try {
-        const pc = call.peerConnection;
-        if (!pc) return;
-        const screenOnlyStream = new MediaStream([screenTrack]);
-        const sender = pc.addTrack(screenTrack, screenOnlyStream);
-        State.call.screenSenders[peerId] = sender;
-      } catch(e){ console.warn('addTrack screen falhou:', e); }
+    const screenTrack = s.getVideoTracks()[0];
+    const myMainPeerId = State.call.currentMainPeerId;
+    const myScreenPeerId = myMainPeerId + '-screen';
+
+    /* ⚡ Cria um PEER SEPARADO só pra tela — assim funciona como uma "chamada própria" */
+    const screenPeer = new Peer(myScreenPeerId, PEER_CONFIG);
+    State.call.screenPeer = screenPeer;
+    State.call.screenPeerId = myScreenPeerId;
+    State.call.screenOutgoingCalls = {};
+
+    screenPeer.on('open', () => {
+      /* Avisa os outros via Firestore que existe uma tela nesta sala */
+      Backend.joinVoiceRoom(State.call.roomId, {
+        userId: State.me.id + '__screen',
+        peerId: myScreenPeerId,
+        parentPeerId: myMainPeerId,
+        displayName: State.me.displayName,
+        avatar: State.me.avatar || '',
+        isScreen: true,
+        joinedAt: Date.now()
+      }).catch(()=>{});
+
+      /* Chama TODO MUNDO da sala a partir do peer de tela */
+      State.call.screenRoomUnsub = Backend.subscribeVoiceRoom(State.call.roomId, members => {
+        members.forEach(m => {
+          if (m.peerId === myMainPeerId) return;         /* eu mesmo */
+          if (m.peerId === myScreenPeerId) return;       /* minha própria tela */
+          if (m.peerId && m.peerId.endsWith('-screen')) return; /* outras telas */
+          if (!m.peerId) return;
+          if (State.call.screenOutgoingCalls[m.peerId]) return;
+          try {
+            const call = screenPeer.call(m.peerId, s);
+            if (!call) return;
+            State.call.screenOutgoingCalls[m.peerId] = call;
+            call.on('close', () => { delete State.call.screenOutgoingCalls[m.peerId]; });
+            call.on('error', () => { delete State.call.screenOutgoingCalls[m.peerId]; });
+          } catch(e){ console.warn('screen call falhou:', e); }
+        });
+      });
     });
-    
+
+    screenPeer.on('error', e => console.warn('Screen peer erro:', e.type));
+
     /* Preview local */
     $('c-screen').classList.add('sharing');
     $('screen-share-container').classList.add('active');
     $('screen-video').srcObject = s;
     $('call-grid').classList.add('with-screenshare');
     $('screen-label-text').textContent = 'VOCÊ ESTÁ COMPARTILHANDO';
-    
-    screenTrack.onended = ()=> stopScreenShare();
-    
-    if (State.call.roomId){ try { await Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: true }); } catch(e){} }
-    toast('Tela compartilhada', 'Sua câmera continua ativa para todos.', 'success');
-  } catch(e){ 
-    if (e.name !== 'AbortError') toast('Tela','Não foi possível compartilhar.','error'); 
+
+    screenTrack.onended = () => stopScreenShare();
+
+    if (State.call.roomId){
+      try { await Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: true }); } catch(e){}
+    }
+    toast('Tela compartilhada', 'Todos vão ver em tile separado.', 'success');
+  } catch(e){
+    if (e.name !== 'AbortError') toast('Tela','Não foi possível compartilhar.','error');
   }
 };
 
 function stopScreenShare(){
-  if (State.call.screenStream){ 
-    State.call.screenStream.getTracks().forEach(t=>t.stop()); 
-    State.call.screenStream = null; 
+  if (State.call.screenStream){
+    State.call.screenStream.getTracks().forEach(t=>t.stop());
+    State.call.screenStream = null;
   }
-  /* ⚡ Remove o track da tela de cada peer — câmera continua intacta */
-  if (State.call.screenSenders){
-    Object.entries(State.call.screenSenders).forEach(([peerId, sender]) => {
-      try {
-        const call = State.call.calls[peerId];
-        if (call && call.peerConnection && sender){
-          call.peerConnection.removeTrack(sender);
-          /* Renegocia pra avisar o outro lado */
-          try {
-            const pc = call.peerConnection;
-            if (pc.signalingState !== 'closed'){
-              pc.createOffer({ iceRestart: false }).then(offer => pc.setLocalDescription(offer)).catch(()=>{});
-            }
-          } catch(e){}
-        }
-      } catch(e){}
-    });
-    State.call.screenSenders = {};
+  /* Fecha todos os envios de tela */
+  Object.values(State.call.screenOutgoingCalls || {}).forEach(c => { try { c.close(); } catch(e){} });
+  State.call.screenOutgoingCalls = {};
+  /* Encerra o unsub da sala */
+  if (State.call.screenRoomUnsub){ try { State.call.screenRoomUnsub(); } catch(e){} State.call.screenRoomUnsub = null; }
+  /* Destrói o peer secundário */
+  if (State.call.screenPeer){ try { State.call.screenPeer.destroy(); } catch(e){} State.call.screenPeer = null; }
+  /* Remove a entrada da sala de voz */
+  if (State.call.roomId && State.me){
+    Backend.leaveVoiceRoom(State.call.roomId, State.me.id + '__screen').catch(()=>{});
   }
-  $('c-screen').classList.remove('sharing'); 
-  $('screen-share-container').classList.remove('active'); 
-  $('call-grid').classList.remove('with-screenshare'); 
-  $('screen-video').srcObject = null; 
-  
+  State.call.screenPeerId = null;
+
+  $('c-screen').classList.remove('sharing');
+  $('screen-share-container').classList.remove('active');
+  $('call-grid').classList.remove('with-screenshare');
+  $('screen-video').srcObject = null;
+
   if (document.fullscreenElement){ try { document.exitFullscreen(); } catch(e){} }
-  
-  if (State.call.roomId && backendReady){ 
-    Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: false }).catch(()=>{}); 
+
+  if (State.call.roomId && backendReady){
+    Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: false }).catch(()=>{});
   }
 }
 
@@ -3059,7 +3111,17 @@ function endCall(){
   Object.values(State.call.calls).forEach(c=>{ try { c.close(); } catch(e){} }); State.call.calls = {};
   State.call.remoteInfo = {}; State.call.remoteScreenSharer = null;
   if (State.call.peer){ try { State.call.peer.destroy(); } catch(e){} State.call.peer = null; }
-  if (State.call.roomUnsub){ try { State.call.roomUnsub(); } catch(e){} State.call.roomUnsub = null; }
+    if (State.call.roomUnsub){ try { State.call.roomUnsub(); } catch(e){} State.call.roomUnsub = null; }
+  /* ⚡ Limpa tudo de tela */
+  if (State.call.screenRoomUnsub){ try { State.call.screenRoomUnsub(); } catch(e){} State.call.screenRoomUnsub = null; }
+  Object.values(State.call.screenOutgoingCalls || {}).forEach(c => { try { c.close(); } catch(e){} });
+  Object.values(State.call.screenIncomingCalls || {}).forEach(c => { try { c.close(); } catch(e){} });
+  State.call.screenOutgoingCalls = {};
+  State.call.screenIncomingCalls = {};
+  if (State.call.screenPeer){ try { State.call.screenPeer.destroy(); } catch(e){} State.call.screenPeer = null; }
+  if (rid && State.me && backendReady){ Backend.leaveVoiceRoom(rid, State.me.id + '__screen').catch(()=>{}); }
+  State.call.screenPeerId = null;
+  State.call.currentMainPeerId = null;
   $('call-overlay').classList.remove('active'); $('call-widget').classList.remove('active'); $('call-grid').innerHTML = ''; $('call-grid').classList.remove('with-screenshare');
   $('screen-share-container').classList.remove('active'); $('screen-video').srcObject = null;
   ['c-mic','c-cam'].forEach(id=>$(id).classList.remove('active')); $('c-screen').classList.remove('sharing'); $('c-flip').style.display = 'none';
