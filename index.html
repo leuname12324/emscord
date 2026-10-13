@@ -1136,7 +1136,8 @@ const State = {
   activeView:'friends', activeFriendTab:'online',
   users:{}, friends:[], pending:[], servers:[], channels:{}, messages:{},
   messagesUnsub:null,
-  unread:{}, lastRead:LS.get('lastRead', {}), unreadSubs:[],
+    unread:{}, lastRead:LS.get('lastRead', {}), unreadSubs:[],
+  channelServerMap:{},
   mutes:{}, mutesUnsub:null,
   contextMenuTarget:null,
     settings:LS.get('settings', { videoQuality: '480', noiseReduction: true, echoCancellation: true, autoGainControl: true }),
@@ -1883,7 +1884,10 @@ async function setupUnreadListeners(){
         State.channels[srv.id] = chans;
         renderVoiceChannelAvatars();
       }
-      chans.forEach(ch=>{
+            chans.forEach(ch=>{
+        /* ⚡ Mapeia canal → servidor pra badge funcionar mesmo em servidores fechados */
+        if (ch.serverId) State.channelServerMap[ch.id] = ch.serverId;
+        else State.channelServerMap[ch.id] = srv.id;
         if ((ch.type||'text') === 'voice') return;
         if (!ch.lastMessage) return;
         if (ch.id === State.activeChannel) { delete State.unread[ch.id]; return; }
@@ -1914,9 +1918,8 @@ function updateBadges(){
   const serverUnread = {};
   Object.keys(State.unread).forEach(chId => {
     if (chId.startsWith('dm_')) return;
-    for (const sid in State.channels){
-      if (State.channels[sid].find(c=>c.id === chId)){ serverUnread[sid] = (serverUnread[sid] || 0) + 1; break; }
-    }
+    const sid = State.channelServerMap[chId];
+    if (sid) serverUnread[sid] = (serverUnread[sid] || 0) + 1;
   });
   document.querySelectorAll('#rail-servers .rail-item').forEach(btn => {
     const sid = btn.dataset.serverId;
@@ -1937,13 +1940,16 @@ function updateBadges(){
     if (count > 0){ if (!badge){ badge = document.createElement('div'); badge.className = 'unread-badge'; el.appendChild(badge); } badge.textContent = count > 99 ? '99+' : String(count); }
     else if (badge) badge.remove();
   });
-  document.querySelectorAll('.dm-item').forEach(el => {
+    document.querySelectorAll('.dm-item').forEach(el => {
     const cid = el.dataset.chId; if (!cid) return;
     const count = State.unread[cid] || 0;
     let badge = el.querySelector('.unread-badge');
     if (count > 0){ if (!badge){ badge = document.createElement('div'); badge.className = 'unread-badge'; el.appendChild(badge); } badge.textContent = count > 99 ? '99+' : String(count); }
     else if (badge) badge.remove();
   });
+  /* ⚡ Título da aba mostra quantos canais/DMs tem novidade */
+  const totalUnread = Object.keys(State.unread).length;
+  document.title = totalUnread > 0 ? `(${totalUnread}) EMSCORD` : 'EMSCORD';
 }
 
 function markChannelRead(chId){ State.lastRead[chId] = Date.now(); LS.set('lastRead', State.lastRead); delete State.unread[chId]; updateBadges(); }
@@ -2788,9 +2794,14 @@ function addLocalTile(){
 function createRemoteScreenTile(peerId, name, avatar, stream){
   const id = 'screen-' + peerId.replace(/[^a-z0-9]/gi,'_');
   let tile = $(id);
-  if (tile){
+    if (tile){
     const v = tile.querySelector('video');
-    if (v){ v.srcObject = stream; v.play().catch(()=>{}); }
+    if (v){
+      v.srcObject = stream;
+      const hasAudio = stream.getAudioTracks().length > 0;
+      v.muted = !hasAudio;
+      v.play().catch(()=>{});
+    }
     return;
   }
   const grid = $('call-grid');
@@ -2798,7 +2809,7 @@ function createRemoteScreenTile(peerId, name, avatar, stream){
   tile.className = 'call-tile screen-tile';
   tile.id = id;
   tile.innerHTML = `
-    <video autoplay playsinline muted></video>
+    <video autoplay playsinline></video>
     <button class="tile-fs-btn" title="Tela cheia">⛶</button>
     <div class="tile-name"><span class="mic"></span>${esc(name)} · 🖥 TELA</div>
     <div class="sharing-badge">🖥 TELA</div>
@@ -2806,7 +2817,12 @@ function createRemoteScreenTile(peerId, name, avatar, stream){
   grid.appendChild(tile);
   const v = tile.querySelector('video');
   v.srcObject = stream;
-  v.play().catch(()=>{});
+  const hasAudio = stream.getAudioTracks().length > 0;
+  v.muted = !hasAudio;
+  v.play().catch(() => {
+    /* ⚡ Se o autoplay falhar (áudio bloqueado), tenta de novo */
+    setTimeout(() => v.play().catch(()=>{}), 500);
+  });
   const fsBtn = tile.querySelector('.tile-fs-btn');
   fsBtn.onclick = (e) => {
     e.stopPropagation();
@@ -3056,12 +3072,19 @@ if ($('c-screen')) $('c-screen').onclick = async ()=>{
     return;
   }
   try {
-    const s = await navigator.mediaDevices.getDisplayMedia({
+        const s = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        sampleRate: 48000,
+        channelCount: 2
+      }
     });
     State.call.screenStream = s;
     const screenTrack = s.getVideoTracks()[0];
+    const hasAudio = s.getAudioTracks().length > 0;
     const myMainPeerId = State.call.currentMainPeerId;
     const myScreenPeerId = myMainPeerId + '-screen';
 
@@ -3113,10 +3136,14 @@ if ($('c-screen')) $('c-screen').onclick = async ()=>{
 
     screenTrack.onended = () => stopScreenShare();
 
-    if (State.call.roomId){
+        if (State.call.roomId){
       try { await Backend.updateVoiceMember(State.call.roomId, State.me.id, { sharing: true }); } catch(e){}
     }
-    toast('Tela compartilhada', 'Todos vão ver em tile separado.', 'success');
+    if (hasAudio){
+      toast('🖥 Tela + áudio', 'Compartilhando imagem e som.', 'success');
+    } else {
+      toast('🖥 Tela compartilhada', 'Sem áudio (o navegador não capturou).', 'success');
+    }
   } catch(e){
     if (e.name !== 'AbortError') toast('Tela','Não foi possível compartilhar.','error');
   }
