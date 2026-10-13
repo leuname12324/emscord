@@ -1795,7 +1795,6 @@ function subscribeAllVoiceRooms(){
     });
   });
 }
-}
 function unsubscribeAllVoiceRooms(){
   Object.values(State.voiceRoomSubs).forEach(unsub=>{ try { unsub(); } catch(e){} });
   State.voiceRoomSubs = {}; State.voiceRoomMembers = {};
@@ -2238,7 +2237,6 @@ function getDmFriend(chId){
   const fingerprint = list.length + '_' + (list[list.length-1]?.id || '');
   if (wrap._lastFingerprint === fingerprint) return;
   wrap._lastFingerprint = fingerprint;
-  wrap.innerHTML = '';
   wrap.innerHTML = '';
   const list = State.messages[State.activeChannel] || [];
   const dmFriend = getDmFriend(State.activeChannel);
