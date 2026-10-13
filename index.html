@@ -782,17 +782,23 @@ input,textarea{user-select:text;-webkit-user-select:text}
     </div>
     <div class="modal-body">
       <p style="color:var(--txt-mut);font-size:13px;margin-bottom:16px;line-height:1.5">Escolha um jogo para jogar com seus amigos. Os jogos abrem em uma nova aba.</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
         <a href="https://www.trucoonline.com.br/" target="_blank" rel="noopener" class="activity-card">
-          <div style="font-size:52px;margin-bottom:8px">🃏</div>
-          <div style="font-weight:800;color:#fff;font-size:15px;letter-spacing:.5px">TRUCO</div>
-          <div style="font-size:11px;color:var(--txt-mut);margin-top:4px">Truco Online</div>
+          <div style="font-size:44px;margin-bottom:8px">🃏</div>
+          <div style="font-weight:800;color:#fff;font-size:14px;letter-spacing:.5px">TRUCO</div>
+          <div style="font-size:10px;color:var(--txt-mut);margin-top:4px">trucoonline.com.br</div>
         </a>
-        <a href="https://www.unoonline.net/" target="_blank" rel="noopener" class="activity-card">
-          <div style="font-size:52px;margin-bottom:8px">🎴</div>
-          <div style="font-weight:800;color:#fff;font-size:15px;letter-spacing:.5px">UNO</div>
-          <div style="font-size:11px;color:var(--txt-mut);margin-top:4px">Uno Online</div>
+        <a href="https://www.gamepix.com/play/uno-online" target="_blank" rel="noopener" class="activity-card">
+          <div style="font-size:44px;margin-bottom:8px">🎴</div>
+          <div style="font-weight:800;color:#fff;font-size:14px;letter-spacing:.5px">UNO</div>
+          <div style="font-size:10px;color:var(--txt-mut);margin-top:4px">GamePix</div>
         </a>
+        <a href="https://lichess.org/" target="_blank" rel="noopener" class="activity-card">
+          <div style="font-size:44px;margin-bottom:8px">♟️</div>
+          <div style="font-weight:800;color:#fff;font-size:14px;letter-spacing:.5px">XADREZ</div>
+          <div style="font-size:10px;color:var(--txt-mut);margin-top:4px">Lichess</div>
+        </a>
+      </div>
       </div>
       <div style="margin-top:16px;padding:12px;background:rgba(192,57,43,.08);border-radius:8px;border-left:3px solid var(--gold-l);font-size:12px;color:var(--txt-mut);line-height:1.5">
         💡 <b style="color:var(--gold-l)">Dica:</b> compartilhe sua tela na call enquanto joga com os amigos!
@@ -1965,10 +1971,28 @@ function renderServerSidebar(wrap, srv){
   const span = document.createElement('span'); span.textContent = srv.name; banner.appendChild(span);
   wrap.appendChild(banner);
 
-  const canManage = canManageServer();
+    const canManage = canManageServer();
   const chans = State.channels[srv.id] || [];
   const textChans = chans.filter(c=>(c.type || 'text') === 'text');
   const voiceChans = chans.filter(c=>c.type === 'voice');
+
+  /* ⚡ Info do servidor vai pra CIMA, logo após o banner */
+  const infoCat = document.createElement('div');
+  infoCat.className = 'ch-cat'; infoCat.style.marginTop = '8px';
+  infoCat.innerHTML = '<span>ℹ Servidor</span>';
+  wrap.appendChild(infoCat);
+  const info = document.createElement('div');
+  info.style.cssText = 'padding:0 16px 12px;font-size:12px;color:var(--txt-mut);line-height:1.8';
+  const ownerName = State.users[srv.owner]?.displayName || '—';
+  info.innerHTML = `<div>👑 Dono: <b style="color:#ef5350">${esc(ownerName)}</b></div>
+    <div>👥 ${srv.members.length} membro(s)</div>
+    <div style="margin-top:8px;display:flex;gap:6px">
+      <button class="btn-brand" style="padding:6px 12px;font-size:12px;flex:1" id="btn-invite-srv">Convidar</button>
+      <button class="btn-brand" style="padding:6px 12px;font-size:12px;flex:1;background:linear-gradient(180deg,#2ecc71,#23a55a);color:#fff" id="btn-open-members">Membros</button>
+    </div>`;
+  info.querySelector('#btn-invite-srv').onclick = ()=> showInviteModal(srv);
+  info.querySelector('#btn-open-members').onclick = ()=> openMembersPanel();
+  wrap.appendChild(info);
 
   const catText = document.createElement('div');
   catText.className = 'ch-cat';
@@ -2018,6 +2042,7 @@ function renderServerSidebar(wrap, srv){
   }
   wrap.appendChild(listVoice);
 
+    /* ⚡ Info do servidor movido pra depois dos canais (fica no rodapé da sidebar) */
   const infoCat = document.createElement('div');
   infoCat.className = 'ch-cat'; infoCat.style.marginTop = '12px';
   infoCat.innerHTML = '<span>ℹ Servidor</span>';
@@ -2178,9 +2203,14 @@ function getDmFriend(chId){
   if (!chId || !chId.startsWith('dm_')) return null;
   const parts = chId.slice(3).split('_');
   const otherId = parts.find(p => p !== State.me.id);
-  return State.users[otherId] || null;
+  /* ⚡ Fallback: se ainda não carregou, tenta achar nos friends */
+  if (!State.users[otherId]){
+    const f = State.friends.find(fr => fr.friendId === otherId);
+    if (f) return { id: otherId, displayName: '…', username: '', discriminator: '' };
+    return { id: otherId, displayName: 'Amigo', username: '', discriminator: '' };
+  }
+  return State.users[otherId];
 }
-
 function renderMessages(){
   const wrap = $('messages');
   wrap.innerHTML = '';
@@ -2212,7 +2242,7 @@ function messageEl(m, first){
       <div class="msg-head"><span class="msg-author ${m.system ? 'system' : ''}">${esc(user.displayName)}</span><span class="msg-time">${time}</span></div>
       <div class="msg-text${m.edited ? ' edited' : ''}">${formatText(m.text)}</div>
     </div>
-    ${!m.system ? `<button class="msg-menu-btn" title="Opções" data-msg-menu="${m.id}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg></button>` : ''}`;
+        ${!m.system ? `<button class="msg-menu-btn" title="Opções" data-msg-menu="${m.id}">`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg></button>` : ''}`;
   const menuBtn = el.querySelector('.msg-menu-btn');
   if (menuBtn) menuBtn.onclick = (e)=>{ e.stopPropagation(); openMsgDropdown(e, m, isMine); };
   return el;
@@ -2222,8 +2252,10 @@ function formatText(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').repl
 function openMsgDropdown(e, msg, isMine){
   State.msgDropdownTarget = msg; State.msgDropdownChannel = State.activeChannel;
   const dd = $('msg-dropdown');
+  const amOwner = canManageServer();
   dd.querySelector('[data-action="edit"]').style.display = isMine ? 'flex' : 'none';
-  dd.querySelector('[data-action="delete"]').style.display = isMine ? 'flex' : 'none';
+  /* ⚡ Mostra "excluir" se for meu ou se eu for dono do servidor */
+  dd.querySelector('[data-action="delete"]').style.display = (isMine || amOwner) ? 'flex' : 'none';
   const rect = e.currentTarget.getBoundingClientRect();
   let x = rect.left - 160, y = rect.bottom + 4;
   if (x < 10) x = rect.left + 8;
@@ -2252,14 +2284,16 @@ async function handleMsgAction(action, msg, chId){
     setTimeout(()=>$('edit-msg-text').focus(), 200);
     return;
   }
-  if (action === 'delete'){
-    if (msg.userId !== State.me.id){ toast('Sem permissão','Só pode excluir suas mensagens.','error'); return; }
+    if (action === 'delete'){
+    /* ⚡ Autor OU dono do servidor pode apagar */
+    const isMine = msg.userId === State.me.id;
+    const amOwner = canManageServer();
+    if (!isMine && !amOwner){ toast('Sem permissão','Só o autor ou o dono do servidor.','error'); return; }
     if (!confirm('Excluir esta mensagem?')) return;
     try { await Backend.deleteMessage(chId, msg.id); toast('Mensagem excluída', '', 'success'); }
     catch(e){ console.error(e); toast('Erro', 'Não foi possível excluir.', 'error'); }
     return;
   }
-}
 
 $('btn-edit-msg-save').onclick = async ()=>{
   const newText = $('edit-msg-text').value.trim();
@@ -2496,7 +2530,13 @@ function openDm(other){
   const cid = dmId(State.me.id, other.id);
   State.activeChannel = cid; State.activeView = 'chat'; State.activeServer = null;
   markChannelRead(cid);
-  renderRail(); renderSidebar(); subscribeActiveMessages(); switchView('chat');
+  renderRail(); renderSidebar(); subscribeActiveMessages();
+  switchView('chat');
+  /* ⚡ Força atualização do título após render */
+  setTimeout(() => {
+    const dmFriend = getDmFriend(cid);
+    if (dmFriend) $('main-title').innerHTML = `<span class="hash">@</span><span>${esc(dmFriend.displayName)}</span>`;
+  }, 50);
 }
 
 /* ========== WEBRTC ========== */
@@ -2588,28 +2628,54 @@ async function startCall(rid, title, serverId, isDmCall, dmFriendId){
         });
       } catch(e){ console.warn(e); }
     });
-        peer.on('call', (call)=>{
+            peer.on('call', (call)=>{
       call.answer(State.call.localStream);
       const remoteId = call.peer; 
       const info = State.call.remoteInfo[remoteId] || { name:'Participante' };
       const v = createRemoteTile(remoteId, info.name, info.avatar);
-      /* ⚡ Conta streams desse peer: 1º = câmera, 2º = tela */
-      let streamCount = 0;
-      call.on('stream', stream=>{
-        streamCount++;
-        if (streamCount === 1){
+      /* ⚡ Mapeia streams por ID — 1º = câmera, extra = tela */
+      const knownStreams = new Set();
+      let mainAttached = false;
+      const handleStream = (stream) => {
+        if (knownStreams.has(stream.id)) return;
+        knownStreams.add(stream.id);
+        const hasAudio = stream.getAudioTracks().length > 0;
+        const hasVideo = stream.getVideoTracks().length > 0;
+        if (!mainAttached && hasAudio && hasVideo){
+          /* Stream principal (câmera + mic) */
           attachRemoteStream(v, stream);
-        } else {
-          /* Tela compartilhada (stream só de vídeo, sem áudio) */
-          const hasAudio = stream.getAudioTracks().length > 0;
-          if (!hasAudio) {
-            createRemoteScreenTile(remoteId, info.name, info.avatar, stream);
-          } else {
-            /* Por segurança, se vier áudio junto, é a câmera */
-            attachRemoteStream(v, stream);
-          }
+          mainAttached = true;
+        } else if (hasVideo && !hasAudio){
+          /* Screen share (só vídeo) */
+          createRemoteScreenTile(remoteId, info.name, info.avatar, stream);
+        } else if (!mainAttached){
+          attachRemoteStream(v, stream);
+          mainAttached = true;
         }
-      });
+      };
+      /* PeerJS emite 'stream' uma vez, mas 'ontrack' na PC pega os extras */
+      call.on('stream', stream => handleStream(stream));
+      try {
+        const pc = call.peerConnection;
+        if (pc){
+          pc.addEventListener('track', (event) => {
+            const streams = event.streams || [];
+            streams.forEach(s => handleStream(s));
+          });
+          /* Também escuta quando alguém adiciona track novo via renegociação */
+          pc.addEventListener('negotiationneeded', () => {
+            pc.getReceivers().forEach(recv => {
+              if (recv.track && recv.track.kind === 'video'){
+                const sid = recv.track.id;
+                if (!knownStreams.has(sid)){
+                  const stream = new MediaStream([recv.track]);
+                  handleStream(stream);
+                }
+              }
+            });
+          });
+        }
+      } catch(e){ console.warn('ontrack bind falhou:', e); }
       call.on('close', ()=>{ removeRemoteTile(remoteId); removeRemoteScreenTile(remoteId); });
       call.on('error', ()=>{ removeRemoteTile(remoteId); removeRemoteScreenTile(remoteId); });
       State.call.calls[remoteId] = call;
@@ -2630,12 +2696,41 @@ function handleRoomMembers(members, myPeerId){
       else if (!m.sharing && badge){ badge.remove(); tile.classList.remove('is-sharing'); }
     }
     if (State.call.calls[m.peerId]) return;
-    if (myPeerId < m.peerId){
+        if (myPeerId < m.peerId){
       const call = State.call.peer.call(m.peerId, State.call.localStream);
-      if (call){ const v = createRemoteTile(m.peerId, m.displayName, m.avatar); call.on('stream', stream=>{ attachRemoteStream(v, stream); }); call.on('close', ()=>{ removeRemoteTile(m.peerId); }); call.on('error', ()=>{ removeRemoteTile(m.peerId); }); State.call.calls[m.peerId] = call; }
+      if (call){
+        const v = createRemoteTile(m.peerId, m.displayName, m.avatar);
+        const knownStreams = new Set();
+        let mainAttached = false;
+        const handleStream = (stream) => {
+          if (knownStreams.has(stream.id)) return;
+          knownStreams.add(stream.id);
+          const hasAudio = stream.getAudioTracks().length > 0;
+          const hasVideo = stream.getVideoTracks().length > 0;
+          if (!mainAttached && hasAudio && hasVideo){
+            attachRemoteStream(v, stream);
+            mainAttached = true;
+          } else if (hasVideo && !hasAudio){
+            createRemoteScreenTile(m.peerId, m.displayName, m.avatar, stream);
+          } else if (!mainAttached){
+            attachRemoteStream(v, stream);
+            mainAttached = true;
+          }
+        };
+        call.on('stream', stream => handleStream(stream));
+        try {
+          const pc = call.peerConnection;
+          if (pc){
+            pc.addEventListener('track', (event) => {
+              (event.streams || []).forEach(s => handleStream(s));
+            });
+          }
+        } catch(e){}
+        call.on('close', ()=>{ removeRemoteTile(m.peerId); removeRemoteScreenTile(m.peerId); });
+        call.on('error', ()=>{ removeRemoteTile(m.peerId); removeRemoteScreenTile(m.peerId); });
+        State.call.calls[m.peerId] = call;
+      }
     }
-  });
-}
 
 function addLocalTile(){
   const grid = $('call-grid');
@@ -2691,7 +2786,7 @@ function createRemoteTile(peerId, name, avatar){
   let tile = $(id); if (tile) return tile.querySelector('video');
   const grid = $('call-grid');
   tile = document.createElement('div'); tile.className = 'call-tile'; tile.id = id;
-  tile.innerHTML = `<div class="placeholder" id="${id}-ph"><div class="avatar">${avatar ? `<img src="${avatar}"/>` : initials(name)}</div></div><video autoplay playsinline muted style="display:none"></video><div class="tile-name"><span class="mic"></span>${esc(name)}</div>`;
+   tile.innerHTML = `<div class="placeholder" id="${id}-ph"><div class="avatar">${avatar ? `<img src="${avatar}"/>` : initials(name)}</div></div><video autoplay playsinline style="display:none"></video><div class="tile-name"><span class="mic"></span>${esc(name)}</div>`;
   grid.appendChild(tile);
   const v = tile.querySelector('video'); const ph = tile.querySelector('.placeholder');
   /* ⚡ Mostra o vídeo assim que o stream chegar (não espera loadedmetadata) */
@@ -2704,14 +2799,28 @@ function createRemoteTile(peerId, name, avatar){
 function attachRemoteStream(videoEl, stream){
   if (!videoEl || !stream) return;
   videoEl.srcObject = stream;
+  videoEl.muted = false;
+  videoEl.volume = 1.0;
   const tile = videoEl.closest('.call-tile');
   const ph = tile ? tile.querySelector('.placeholder') : null;
   videoEl.style.display = 'block';
   if (ph) ph.style.display = 'none';
+  /* ⚡ Tenta tocar áudio+vídeo — autoplay pode exigir interação */
   const tryPlay = ()=> videoEl.play().catch(e=>{
-    setTimeout(()=> videoEl.play().catch(()=>{}), 400);
+    setTimeout(()=> videoEl.play().catch(()=>{
+      /* Se ainda falhar, mostra aviso */
+      toast('🔊 Clique na tela', 'Clique em qualquer lugar para liberar o áudio', 'call');
+    }), 600);
   });
   tryPlay();
+}
+
+/* ⚡ Destrava autoplay com o primeiro clique (política de navegadores) */
+document.addEventListener('click', () => {
+  document.querySelectorAll('#call-grid video').forEach(v => {
+    if (v.muted === false) v.play().catch(()=>{});
+  });
+}, { once: false, passive: true });
 }
 
 function removeRemoteTile(peerId){
@@ -2919,7 +3028,16 @@ function stopScreenShare(){
     Object.entries(State.call.screenSenders).forEach(([peerId, sender]) => {
       try {
         const call = State.call.calls[peerId];
-        if (call && call.peerConnection && sender) call.peerConnection.removeTrack(sender);
+        if (call && call.peerConnection && sender){
+          call.peerConnection.removeTrack(sender);
+          /* Renegocia pra avisar o outro lado */
+          try {
+            const pc = call.peerConnection;
+            if (pc.signalingState !== 'closed'){
+              pc.createOffer({ iceRestart: false }).then(offer => pc.setLocalDescription(offer)).catch(()=>{});
+            }
+          } catch(e){}
+        }
       } catch(e){}
     });
     State.call.screenSenders = {};
@@ -3051,7 +3169,14 @@ async function renderSettings(){
         </div>
         <div class="hint">Máx 8MB — será redimensionada automaticamente.</div>
       </div>
-      <div class="setting-row"><label>Meu código único</label><div class="code-badge">${fullTag}</div><div class="hint">Compartilhe este código para que outros te adicionem.</div></div>
+            <div class="setting-row">
+        <label>Meu código único</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="code-badge" style="flex:1;justify-content:center">${fullTag}</div>
+          <button type="button" id="btn-copy-my-code" class="btn-brand" style="padding:10px 16px;font-size:12px;min-height:42px;flex-shrink:0">📋 Copiar</button>
+        </div>
+        <div class="hint">Compartilhe este código para que outros te adicionem.</div>
+      </div>
       <div class="setting-row"><label>Nome de exibição</label><input type="text" id="set-name" value="${esc(State.me.displayName)}"/></div>
       <div class="setting-row"><label>Nome de usuário</label><input type="text" id="set-user" value="${esc(State.me.username)}"/></div>
       <div class="setting-row"><label>E-mail</label><input type="email" id="set-email" value="${esc(State.me.email)}"/>${pn}</div>
@@ -3127,10 +3252,24 @@ async function renderSettings(){
       }
     };
     
-    $('btn-account-cancel').onclick = ()=>{
+        $('btn-account-cancel').onclick = ()=>{
       State.accountPending = {};
       renderSettings();
     };
+
+    /* ⚡ Botão copiar código único */
+    const copyCodeBtn = $('btn-copy-my-code');
+    if (copyCodeBtn){
+      copyCodeBtn.onclick = () => {
+        if (navigator.clipboard){
+          navigator.clipboard.writeText(fullTag).then(()=> toast('Copiado!', fullTag, 'success'));
+        } else {
+          const ta = document.createElement('textarea'); ta.value = fullTag;
+          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+          toast('Copiado!', fullTag, 'success');
+        }
+      };
+    }
   }
   
   if (settingsTab === 'voice'){
