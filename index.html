@@ -1139,7 +1139,7 @@ const State = {
   unread:{}, lastRead:LS.get('lastRead', {}), unreadSubs:[],
   mutes:{}, mutesUnsub:null,
   contextMenuTarget:null,
-  settings:LS.get('settings', { videoQuality: '720', noiseReduction: true, echoCancellation: true, autoGainControl: true }),
+    settings:LS.get('settings', { videoQuality: '480', noiseReduction: true, echoCancellation: true, autoGainControl: true }),
   voiceRoomMembers:{}, voiceRoomSubs:{},
   msgDropdownTarget:null, msgDropdownChannel:null,
   editMsgTarget:null, editMsgChannel:null,
@@ -1401,14 +1401,33 @@ function startPresenceHeartbeat(){
   };
   update();
   State.presenceInterval = setInterval(update, 30000);
+  /* ⚡ Reduz consumo quando a aba está em background */
+document.addEventListener('visibilitychange', () => {
+  if (!State.call.active || !State.call.localStream) return;
+  const videoTrack = State.call.localStream.getVideoTracks()[0];
+  if (!videoTrack) return;
+  if (document.hidden){
+    /* Aba escondida → desliga a captura da câmera */
+    if (videoTrack.enabled) { videoTrack.enabled = false; videoTrack._wasEnabled = true; }
+    /* Pausa vídeos remotos pra economizar decode */
+    document.querySelectorAll('#call-grid video, #screen-video').forEach(v => { try { v.pause(); } catch(e){} });
+  } else {
+    /* Aba visível de novo → religa */
+    if (videoTrack._wasEnabled) { videoTrack.enabled = true; videoTrack._wasEnabled = false; }
+    document.querySelectorAll('#call-grid video, #screen-video').forEach(v => { try { v.play().catch(()=>{}); } catch(e){} });
+  }
+});
   document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') update(); });
   window.addEventListener('beforeunload', ()=>{ Backend.updateUser(State.me.id, { lastSeen: 0 }).catch(()=>{}); });
-  if (State.presenceTicker) clearInterval(State.presenceTicker);
+    if (State.presenceTicker) clearInterval(State.presenceTicker);
+  /* ⚡ Só atualiza badges quando a aba está visível; 60s em vez de 30s */
   State.presenceTicker = setInterval(()=>{
-    if (State.activeView === 'friends') renderFriends();
-    renderSidebar();
-    if (State.activeServer) renderMembers();
-  }, 30000);
+    if (document.hidden) return;
+    /* Atualização leve: só badges, não reconstrói DOM */
+    updateBadges();
+    if (State.activeServer && $('members-panel').classList.contains('open')) renderMembers();
+    else if (State.activeView === 'friends') renderFriends();
+  }, 60000);
 }
 
 window.addEventListener('DOMContentLoaded', ()=>{
@@ -1612,11 +1631,17 @@ async function setupListeners(){
       const idx = list.findIndex(f=>f.friendId === k);
       if (idx === -1){ try { State.friendUserSubs[k](); } catch(e){} delete State.friendUserSubs[k]; }
     });
+        /* ⚡ Só cria listeners para amigos ONLINE ou em call */
+    const now = Date.now();
     list.forEach(f=>{
+      const u = State.users[f.friendId];
+      const isRelevant = !u || (u.lastSeen && (now - u.lastSeen < 120000)) || u.inCall;
+      if (!isRelevant) return;
       if (State.friendUserSubs[f.friendId]) return;
       State.friendUserSubs[f.friendId] = Backend.subscribeUserDoc(f.friendId, u=>{
         State.users[f.friendId] = u;
-        renderSidebar(); if (State.activeView === 'friends') renderFriends();
+        if (State.activeView === 'friends' && !document.hidden) renderFriends();
+        else updateBadges();
       });
     });
     list.forEach(f=>Backend.getUserOnce(f.friendId).then(()=>{
@@ -1752,14 +1777,24 @@ function openServer(sid){
 }
 
 function subscribeAllVoiceRooms(){
-  unsubscribeAllVoiceRooms();
-  if (!State.activeServer) return;
+  if (!State.activeServer){ unsubscribeAllVoiceRooms(); return; }
   const chans = State.channels[State.activeServer] || [];
   const voiceChans = chans.filter(c=>c.type === 'voice');
+  const wanted = new Set(voiceChans.map(ch => roomId(State.activeServer, ch.id)));
+  /* Remove inscrições de canais que sumiram */
+  Object.keys(State.voiceRoomSubs).forEach(rid => {
+    if (!wanted.has(rid)){ try { State.voiceRoomSubs[rid](); } catch(e){} delete State.voiceRoomSubs[rid]; delete State.voiceRoomMembers[rid]; }
+  });
+  /* Só cria inscrições que ainda não existem */
   voiceChans.forEach(ch=>{
     const rid = roomId(State.activeServer, ch.id);
-    State.voiceRoomSubs[rid] = Backend.subscribeVoiceRoom(rid, members=>{ State.voiceRoomMembers[rid] = members; renderVoiceChannelAvatars(); });
+    if (State.voiceRoomSubs[rid]) return;
+    State.voiceRoomSubs[rid] = Backend.subscribeVoiceRoom(rid, members=>{
+      State.voiceRoomMembers[rid] = members;
+      renderVoiceChannelAvatars();
+    });
   });
+}
 }
 function unsubscribeAllVoiceRooms(){
   Object.values(State.voiceRoomSubs).forEach(unsub=>{ try { unsub(); } catch(e){} });
@@ -2196,8 +2231,14 @@ function getDmFriend(chId){
   }
   return State.users[otherId];
 }
-function renderMessages(){
+  function renderMessages(){
   const wrap = $('messages');
+  /* ⚡ Se já tem as mesmas mensagens, não reconstrói */
+  const list = State.messages[State.activeChannel] || [];
+  const fingerprint = list.length + '_' + (list[list.length-1]?.id || '');
+  if (wrap._lastFingerprint === fingerprint) return;
+  wrap._lastFingerprint = fingerprint;
+  wrap.innerHTML = '';
   wrap.innerHTML = '';
   const list = State.messages[State.activeChannel] || [];
   const dmFriend = getDmFriend(State.activeChannel);
@@ -2840,14 +2881,37 @@ function updateGridLayout(){ const grid = $('call-grid'); const tiles = grid.que
 function attachLocalStream(){ const v = $('local-video'), ph = $('local-placeholder'); if (!v || !State.call.localStream) return; v.srcObject = State.call.localStream; v.style.display = 'block'; if (ph) ph.style.display = 'none'; }
 function updateCallTimer(){ if (!State.call.active) return; const s = Math.floor((Date.now() - State.call.startedAt) / 1000); const mm = String(Math.floor(s / 60)).padStart(2,'0'); const ss = String(s % 60).padStart(2,'0'); const t = `${mm}:${ss}`; $('call-timer').textContent = t; $('cw-timer').textContent = t; }
 
+let __micMeterCtx = null, __micMeterTimer = null;
 function startMicMeter(stream){
+  /* Limpa o anterior */
+  if (__micMeterCtx){ try { __micMeterCtx.close(); } catch(e){} __micMeterCtx = null; }
+  if (__micMeterTimer){ clearInterval(__micMeterTimer); __micMeterTimer = null; }
   const track = stream.getAudioTracks()[0]; if (!track) return;
-  try { const ac = new (window.AudioContext || window.webkitAudioContext)(); const src = ac.createMediaStreamSource(stream); const an = ac.createAnalyser(); an.fftSize = 256; src.connect(an); const data = new Uint8Array(an.frequencyBinCount);
-    const tick = ()=>{ if (!State.call.active){ try { ac.close(); } catch(e){} return; } an.getByteFrequencyData(data); let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i]; const level = sum / data.length; const ind = $('local-mic'); const tile = $('tile-local'); if (ind && tile){ const speaking = level > 18; tile.classList.toggle('speaking', speaking && State.call.micOn); ind.classList.toggle('muted', !State.call.micOn); } requestAnimationFrame(tick); };
-    tick();
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    __micMeterCtx = ac;
+    const src = ac.createMediaStreamSource(stream);
+    const an = ac.createAnalyser(); an.fftSize = 128; /* 128 em vez de 256 */
+    src.connect(an);
+    const data = new Uint8Array(an.frequencyBinCount);
+    /* ⚡ 10x por segundo em vez de 60 — imperceptível visualmente, 6x menos CPU */
+    __micMeterTimer = setInterval(() => {
+      if (!State.call.active){ try { ac.close(); } catch(e){} clearInterval(__micMeterTimer); __micMeterTimer = null; __micMeterCtx = null; return; }
+      /* Só mede se a aba está visível */
+      if (document.hidden) return;
+      if (!State.call.micOn) return;
+      an.getByteFrequencyData(data);
+      let sum = 0; for (let i = 0; i < data.length; i++) sum += data[i];
+      const level = sum / data.length;
+      const ind = $('local-mic'); const tile = $('tile-local');
+      if (ind && tile){
+        const speaking = level > 18;
+        tile.classList.toggle('speaking', speaking);
+        ind.classList.toggle('muted', false);
+      }
+    }, 100);
   } catch(e){}
 }
-
 $('c-mic').onclick = async ()=>{
   State.call.micOn = !State.call.micOn;
   if (State.call.localStream) State.call.localStream.getAudioTracks().forEach(t=>t.enabled = State.call.micOn);
@@ -3096,8 +3160,26 @@ $('cw-restore').onclick = e=>{ e.stopPropagation(); restoreCall(); };
 $('call-widget').onclick = ()=> restoreCall();
 $('btn-minimize').onclick = ()=> minimizeCall();
 
-function minimizeCall(){ if (!State.call.active) return; State.call.minimized = true; $('call-overlay').classList.remove('active'); $('call-widget').classList.add('active'); }
-function restoreCall(){ if (!State.call.active) return; State.call.minimized = false; $('call-overlay').classList.add('active'); $('call-widget').classList.remove('active'); }
+function minimizeCall(){
+  if (!State.call.active) return;
+  State.call.minimized = true;
+  $('call-overlay').classList.remove('active');
+  $('call-widget').classList.add('active');
+  /* ⚡ Pausa todos os vídeos pra economizar CPU/memória */
+  document.querySelectorAll('#call-grid video, #screen-video, #screen-share-container video').forEach(v => {
+    try { v.pause(); } catch(e){}
+  });
+}
+function restoreCall(){
+  if (!State.call.active) return;
+  State.call.minimized = false;
+  $('call-overlay').classList.add('active');
+  $('call-widget').classList.remove('active');
+  /* ⚡ Retoma os vídeos */
+  document.querySelectorAll('#call-grid video, #screen-video, #screen-share-container video').forEach(v => {
+    try { v.play().catch(()=>{}); } catch(e){}
+  });
+}
 
 function endCall(){
   if (!State.call.active && !State.call.minimized) return;
