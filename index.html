@@ -2244,7 +2244,6 @@ function getDmFriend(chId){
   if (wrap._lastFingerprint === fingerprint) return;
   wrap._lastFingerprint = fingerprint;
   wrap.innerHTML = '';
-  const list = State.messages[State.activeChannel] || [];
   const dmFriend = getDmFriend(State.activeChannel);
   const srv = State.servers.find(s=>s.id === State.activeServer);
   const ch = srv ? (State.channels[srv.id] || []).find(c=>c.id === State.activeChannel) : null;
